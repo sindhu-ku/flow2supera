@@ -14,6 +14,7 @@ class InputEvent:
     calib_final_hits  = None
     trajectories = None
     interactions = []
+    flashes = []
     t0 = -1
     segment_index_min = -1
     event_separator = ''
@@ -27,8 +28,7 @@ class FlowReader:
             raise TypeError('Input file must be a str type')
         self._event_ids = None
         self._event_t0s = None
-        self._flash_t0s = None
-        self._flash_ids = None
+        self._flashes = None
         self._event_hit_indices = None
         self._hits = None
         self._backtracked_hits = None
@@ -75,6 +75,9 @@ class FlowReader:
         interactions_path = 'mc_truth/interactions/data'
         segments_path = 'mc_truth/segments/data'
         trajectories_path = 'mc_truth/trajectories/data'
+        light_events_path = 'light/events/data'
+        flash_path = 'light/flash/data'
+        flash_light_ref_path = 'light/events/ref/light/flash/ref_region'
 
         self._is_sim = False 
         # TODO Currently only reading one input file at a time. Is it 
@@ -90,6 +93,8 @@ class FlowReader:
             self._event_hit_indices = flow_manager[event_hit_indices_path]
             self._hits = flow_manager[calib_prompt_hits_path]
             self._backtracked_hits = flow_manager[backtracked_hits_path]
+            self._flash_indices =  flow_manager[flash_light_ref_path]
+            self._flashes = flow_manager[flash_path]
             self._is_sim = 'mc_truth' in fin.keys()
             if self._is_sim:
                 #self._segments = flow_manager[events_path,
@@ -114,6 +119,17 @@ class FlowReader:
         if not self._is_sim:
             print('Currently only simulation is supoprted')
             raise NotImplementedError
+    
+    def GetFlash(self, flash):
+        
+        supera_flash = supera.Flash()
+        supera_flash.id = flash['id']
+        supera_flash.time = flash['time'] 
+        #PEPerOpDet = cppyy.gbl.std.vector('double')() #Because c++ vectors are not correctly recognized as vectors here, other supera types seem fine
+        supera_flash.PEPerOpDet = np.array(flash['deconv_sum']).flatten()
+        supera_flash.tpc = flash['tpc']
+        
+        return supera_flash
     
     def GetNeutrinoIxn(self, ixn, ixn_idx):
         
@@ -230,7 +246,17 @@ class FlowReader:
             for ixn_idx, ixn in enumerate(event_interactions):
                 supera_nu = self.GetNeutrinoIxn(ixn, ixn_idx)
                 result.interactions.append(supera_nu)  
-            
+                
+        flash_start = self._flash_indices[result.event_id][0]
+        flash_end = self._flash_indices[result.event_id][1]
+        
+        event_flashes = self._flashes[flash_start:flash_end]
+        result.flashes = []
+        
+        for flash in event_flashes:
+            supera_flash = self.GetFlash(flash)
+            result.flashes.append(supera_flash)
+        
         return result  
  
 
@@ -246,6 +272,5 @@ class FlowReader:
         print('segments in this event:', len(input_event.segments))
         print('trajectories in this event:', len(input_event.trajectories))
         print('interactions in this event:', len(input_event.interactions))
-
-
+        print('flashes in this event:', len(input_event.flashes))
 

@@ -184,6 +184,13 @@ def run_supera(out_file='larcv.root',
             larn = larcv_neutrino(ixn)
             interaction.append(larn)
             
+            
+        #Fill flashes
+        flash = writer.get_data("opflash", "light")
+        for fl in input_data.flashes:
+            larf = larcv_flash(fl)
+            flash.append(larf)
+            
         #propagating trigger info
         trigger = writer.get_data("trigger", "base")
         trigger.id(int(input_data.event_id))  # fixme: this will need to be different for real data?
