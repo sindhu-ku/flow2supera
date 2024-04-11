@@ -94,6 +94,7 @@ class FlowReader:
             self._hits = flow_manager[calib_prompt_hits_path]
             self._backtracked_hits = flow_manager[backtracked_hits_path]
             self._light_event_indices = flow_manager[charge_light_ref_path]
+            self._light_events = flow_manager[light_events_path]
             self._flash_indices =  flow_manager[flash_light_ref_path]
             self._flashes = flow_manager[flash_path]
             self._is_sim = 'mc_truth' in fin.keys()
