@@ -135,31 +135,31 @@ class FlowReader:
     
     def GetNeutrinoIxn(self, ixn, ixn_idx):
         
-        nu_result = supera.Neutrino()
+        supera_neutrino = supera.Neutrino()
         
-        nu_result.id = int(ixn_idx)
-        nu_result.interaction_id = int(ixn['vertex_id']) 
-        nu_result.target = int(ixn['target'])
-        nu_result.vtx = supera.Vertex(ixn['vertex'][0], ixn['vertex'][1], ixn['vertex'][2], ixn['vertex'][3])
-        nu_result.pdg_code = int(ixn['nu_pdg'])
-        nu_result.lepton_pdg_code = int(ixn['lep_pdg'])  
-        nu_result.energy_init = ixn['Enu']
-        nu_result.theta = ixn['lep_ang']
-        nu_result.momentum_transfer =  ixn['Q2']
-        nu_result.momentum_transfer_mag =  ixn['q3']
-        nu_result.energy_transfer =  ixn['q0']
-        nu_result.bjorken_x = ixn['x']
-        nu_result.inelasticity = ixn['y']
-        nu_result.px = ixn['nu_4mom'][0]
-        nu_result.py = ixn['nu_4mom'][1]       
-        nu_result.pz = ixn['nu_4mom'][2]
-        nu_result.lepton_p = ixn['lep_mom']
-        if(ixn['isCC']): nu_result.current_type = 0
-        else: nu_result.current_type = 1
-        nu_result.interaction_mode = int(ixn['reaction'])
-        nu_result.interaction_type = int(ixn['reaction'])   
+        supera_neutrino.id = int(ixn_idx)
+        supera_neutrino.interaction_id = int(ixn['vertex_id']) 
+        supera_neutrino.target = int(ixn['target'])
+        supera_neutrino.vtx = supera.Vertex(ixn['vertex'][0], ixn['vertex'][1], ixn['vertex'][2], ixn['vertex'][3])
+        supera_neutrino.pdg_code = int(ixn['nu_pdg'])
+        supera_neutrino.lepton_pdg_code = int(ixn['lep_pdg'])  
+        supera_neutrino.energy_init = ixn['Enu']
+        supera_neutrino.theta = ixn['lep_ang']
+        supera_neutrino.momentum_transfer =  ixn['Q2']
+        supera_neutrino.momentum_transfer_mag =  ixn['q3']
+        supera_neutrino.energy_transfer =  ixn['q0']
+        supera_neutrino.bjorken_x = ixn['x']
+        supera_neutrino.inelasticity = ixn['y']
+        supera_neutrino.px = ixn['nu_4mom'][0]
+        supera_neutrino.py = ixn['nu_4mom'][1]       
+        supera_neutrino.pz = ixn['nu_4mom'][2]
+        supera_neutrino.lepton_p = ixn['lep_mom']
+        if(ixn['isCC']): supera_neutrino.current_type = 0
+        else: supera_neutrino.current_type = 1
+        supera_neutrino.interaction_mode = int(ixn['reaction'])
+        supera_neutrino.interaction_type = int(ixn['reaction'])   
         
-        return nu_result  
+        return supera_neutrino  
         
     # To truth associations go as hits -> segments -> trajectories
   
@@ -231,12 +231,14 @@ class FlowReader:
 
         result.t0 = self._event_t0s[result.event_id] 
 
+        #Find hits associated with the event
         result.hit_indices = self._event_hit_indices[result.event_id]
         hit_start_index = self._event_hit_indices[result.event_id][0]
         hit_stop_index  = self._event_hit_indices[result.event_id][1]
         result.hits = self._hits[hit_start_index:hit_stop_index]
         result.backtracked_hits = self._backtracked_hits[hit_start_index:hit_stop_index]
 
+        #Find trajectories and segments using the backtracked hits
         truth_ids_dict = self.GetEventTruthFromHits(result.backtracked_hits, 
                                                     self._segments, 
                                                     self._trajectories)
@@ -248,6 +250,7 @@ class FlowReader:
         segments_array = np.array(self._segments)
         result.segments = segments_array[np.isin(segments_array['segment_id'], event_segment_ids)]
 
+        #Find true neutrino interactions associated with the reco events
         result.interactions = []
         if len(result.segments) != 0:
             result.true_event_id = result.segments[0]['event_id']        
@@ -257,7 +260,8 @@ class FlowReader:
             for ixn_idx, ixn in enumerate(event_interactions):
                 supera_nu = self.GetNeutrinoIxn(ixn, ixn_idx)
                 result.interactions.append(supera_nu)  
-                
+            
+        #Light association
         event_flashes = []
         
         #link the light events associated with the charge event
