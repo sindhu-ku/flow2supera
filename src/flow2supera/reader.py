@@ -15,6 +15,7 @@ class InputEvent:
     trajectories = None
     interactions = []
     flashes = []
+    light_events = None
     t0 = -1
     segment_index_min = -1
     event_separator = ''
@@ -78,11 +79,10 @@ class FlowReader:
         light_events_path = 'light/events/data'
         flash_path = 'light/flash/data'
         flash_light_ref_path = 'light/events/ref/light/flash/ref_region'
+        charge_light_ref_path = 'charge/events/ref/light/events/ref_region'
 
         self._is_sim = False 
-        # TODO Currently only reading one input file at a time. Is it 
-        # necessary to read multiple? If so, how to handle non-unique
-        # event IDs?
+
         #for f in input_files:
         flow_manager = h5flow.data.H5FlowDataManager(input_files, 'r')
         with h5py.File(input_files, 'r') as fin:
@@ -93,6 +93,7 @@ class FlowReader:
             self._event_hit_indices = flow_manager[event_hit_indices_path]
             self._hits = flow_manager[calib_prompt_hits_path]
             self._backtracked_hits = flow_manager[backtracked_hits_path]
+            self._light_event_indices = flow_manager[charge_light_ref_path]
             self._flash_indices =  flow_manager[flash_light_ref_path]
             self._flashes = flow_manager[flash_path]
             self._is_sim = 'mc_truth' in fin.keys()
@@ -256,10 +257,20 @@ class FlowReader:
                 supera_nu = self.GetNeutrinoIxn(ixn, ixn_idx)
                 result.interactions.append(supera_nu)  
                 
-        flash_start = self._flash_indices[result.event_id][0]
-        flash_end = self._flash_indices[result.event_id][1]
+        event_flashes = []
         
-        event_flashes = self._flashes[flash_start:flash_end]
+        #link the light events associated with the charge event
+        light_events_start = self._light_event_indices[result.event_id][0]
+        light_events_stop = self._light_event_indices[result.event_id][1]
+        
+        result.light_events = self._light_events[light_events_start:light_events_stop]
+        
+        #link the flashes associated with the light events
+        for lev in result.light_events:
+            flash_start = self._flash_indices[lev['id']][0]
+            flash_end = self._flash_indices[lev['id']][1]
+            event_flashes.extend(self._flashes[flash_start:flash_end])
+        
         result.flashes = []
         
         for flash in event_flashes:
@@ -281,5 +292,6 @@ class FlowReader:
         print('segments in this event:', len(input_event.segments))
         print('trajectories in this event:', len(input_event.trajectories))
         print('interactions in this event:', len(input_event.interactions))
-        print('flashes in this event:', len(input_event.flashes))
+        print('associated light events:', len(input_event.light_events))
+        print('associated flashes:', len(input_event.flashes))
 
