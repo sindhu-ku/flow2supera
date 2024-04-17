@@ -122,14 +122,14 @@ class FlowReader:
             print('Currently only simulation is supoprted')
             raise NotImplementedError
     
-    def GetFlash(self, flash):
+    def GetFlash(self, flash, t0):
         
         supera_flash = supera.Flash()
-        supera_flash.id = flash['id']
-        supera_flash.time = flash['time'] 
-        #PEPerOpDet = cppyy.gbl.std.vector('double')() #Because c++ vectors are not correctly recognized as vectors here, other supera types seem fine
-        supera_flash.PEPerOpDet = np.array(flash['deconv_sum']).flatten()
-        supera_flash.tpc = flash['tpc']
+        supera_flash.id = int(flash['id'])
+        supera_flash.time = flash['hit_time_range'][0]*1e-9 + t0
+        supera_flash.timeWidth = (flash['hit_time_range'][1] - flash['hit_time_range'][0])*1e-9
+        supera_flash.PEPerOpDet = np.array(flash['deconv_sum']).flatten()*0.022857 #adc charge to pe conversion
+        supera_flash.tpc = int(flash['tpc'])
         
         return supera_flash
     
@@ -279,7 +279,7 @@ class FlowReader:
         result.flashes = []
         
         for flash in event_flashes:
-            supera_flash = self.GetFlash(flash)
+            supera_flash = self.GetFlash(flash, result.t0) #fix this with the actual light trigger time when the variable is added to flash
             result.flashes.append(supera_flash)
         
         return result  
