@@ -6,7 +6,7 @@ import time
 import flow2supera
 import argparse
 import ROOT
-from edep2supera.utils import get_iomanager, larcv_meta, larcv_particle, larcv_neutrino
+from edep2supera.utils import get_iomanager, larcv_meta, larcv_particle, larcv_neutrino, larcv_flash
 #from LarpixParser import event_parser as EventParser
 from larcv import larcv
 
