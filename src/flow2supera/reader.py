@@ -108,7 +108,7 @@ class FlowReader:
         nu_result.id = int(ixn_idx)
         nu_result.interaction_id = int(ixn['vertex_id']) 
         nu_result.target = int(ixn['target'])
-        nu_result.vtx = supera.Vertex(ixn['x_vert'], ixn['y_vert'], ixn['z_vert'], ixn['t_vert'])
+        nu_result.vtx = supera.Vertex(ixn['vertex'][0], ixn['vertex'][1], ixn['vertex'][2], ixn['vertex'][3])
         nu_result.pdg_code = int(ixn['nu_pdg'])
         nu_result.lepton_pdg_code = int(ixn['lep_pdg'])  
         nu_result.energy_init = ixn['Enu']
@@ -129,75 +129,20 @@ class FlowReader:
         
         return nu_result  
         
-    # To truth associations go as hits -> segments -> trajectories
-  
-    def GetEventTruthFromHits(self, backtracked_hits, segments, trajectories):
-        '''
-        The Driver class needs to know the number of event trajectories in advance.
-        This function uses the backtracked hits dataset to map hits->segments->trajectories
-        and fills segment and trajectory IDs corresponding to hits. 
-        '''
-        truth_dict = {
-            'segment_ids': [],
-            'trajectory_ids': [],
-        }
+    def GetEventIDFromSegments(self, backtracked_hits, segments):
+        try:
+            seg_ids = np.unique(np.concatenate([bhit['segment_id'][bhit['fraction']!=0.] for bhit in backtracked_hits]))
 
-        segment_ids = []
-        trajectory_ids = []
-        v_dictionary = {}
-        for backtracked_hit in backtracked_hits:
-            for contrib in range(len(backtracked_hit['fraction'])):
-                if abs(backtracked_hit['fraction'][contrib]) == 0: break
-                segment_id = backtracked_hit['segment_id'][contrib]
-                segment = segments[segment_id]
-                segment_ids.append(segment_id)
-                traj_id = segment['traj_id']
-                vertex_id = segment['vertex_id']
-                event_id = segment['event_id']
-                
-                 #filter the trajectories based on the vertex id and map the traj ids
-                if self._is_mpvmpr:
-                    if not ((event_id,vertex_id) in v_dictionary):
-                        mask = (trajectories['vertex_id'] == vertex_id)&(trajectories['event_id'] == event_id)
-                        reduced_trajectories = trajectories[mask]
-                        index_array = np.full(np.max(reduced_trajectories["traj_id"]) + 1, -1)
-                        for tidx, t_id in enumerate(reduced_trajectories["traj_id"]):
-                            index_array[t_id] = tidx
-                        v_dictionary[(event_id,vertex_id)] = (index_array,reduced_trajectories)
-                    index_array,reduced_trajectories = v_dictionary[(event_id,vertex_id)]
-                    
-               
-                if not self._is_mpvmpr:
-                    if not vertex_id in v_dictionary:
-                        mask = (trajectories['vertex_id'] == vertex_id)
-                        reduced_trajectories = trajectories[mask]
-                        index_array = np.full(np.max(reduced_trajectories["traj_id"]) + 1, -1)
-                        for tidx, t_id in enumerate(reduced_trajectories["traj_id"]):
-                            index_array[t_id] = tidx
-                        v_dictionary[vertex_id] = (index_array,reduced_trajectories)
-                    index_array,reduced_trajectories = v_dictionary[vertex_id]
+            return np.unique(segments[seg_ids]['event_id'])
 
-
-                trajectory = reduced_trajectories[index_array[traj_id]]
-             
-                #check consistency of event id
-                if (trajectory['event_id'] != event_id): 
-                    print("Event IDs of trajectory and segment are different")
-                    raise ValueError
-                    
-                while trajectory is not None:
-                    trajectory_ids.append(trajectory['file_traj_id'])
-                    # Some trajectories' parents don't appear in this loop, but need to be seen by the driver. Add them here explicitly.
-                    trajectory_parent_id = trajectory['parent_id'] 
-                    if(trajectory_parent_id < 0): break #if <0, it is the parent
-                    trajectory = reduced_trajectories[index_array[trajectory_parent_id]] 
-                    
-
-        truth_dict['segment_ids'] = segment_ids
-        truth_dict['trajectory_ids'] = trajectory_ids
-
-        return truth_dict
-    
+        except ValueError:
+            valid_frac_counts = [(bhit['fraction']!=0.).sum() for bhit in backtracked_hits]
+            if sum(valid_frac_counts) > 0:
+                # case the original error was not due to empty association, re-raise
+                raise
+            print(f'[SuperaDriver] UNEXPECTED: found no hit with any association to the truth hit')
+            return np.array([])
+        
     def GetEvent(self, event_index):
         
         if event_index >= len(self._event_ids):
@@ -216,22 +161,27 @@ class FlowReader:
         hit_start_index = self._event_hit_indices[result.event_id][0]
         hit_stop_index  = self._event_hit_indices[result.event_id][1]
         result.hits = self._hits[hit_start_index:hit_stop_index]
-            
+
         if not self._is_sim:
             return result
         
         result.backtracked_hits = self._backtracked_hits[hit_start_index:hit_stop_index]
 
-        truth_ids_dict = self.GetEventTruthFromHits(result.backtracked_hits, 
-                                                    self._segments, 
-                                                    self._trajectories)
-        event_trajectory_ids = truth_ids_dict['trajectory_ids']
-        trajectories_array = np.array(self._trajectories)
-        result.trajectories = trajectories_array[np.isin(trajectories_array['file_traj_id'], event_trajectory_ids)]
 
-        event_segment_ids = truth_ids_dict['segment_ids']
-        segments_array = np.array(self._segments)
-        result.segments = segments_array[np.isin(segments_array['segment_id'], event_segment_ids)]
+        st_event_id = self.GetEventIDFromSegments(result.backtracked_hits,self._segments)
+        
+        if len(st_event_id) < 1:
+            print(f'[SuperaDriver] Skipping this entry ({entry})...')
+            return result
+        
+        assert len(st_event_id)==1, f'Found >1 unique "event_id" from backtracked segments ({st_event_id})'
+
+
+        st_event_id = st_event_id[0]
+
+        result.segments = self._segments[self._segments['event_id']==st_event_id]
+        result.trajectories = self._trajectories[self._trajectories['event_id']==st_event_id]
+        
 
         if self._is_mpvmpr:
             return result
@@ -239,7 +189,7 @@ class FlowReader:
         result.interactions = []
         
         if len(result.segments) != 0:
-            result.true_event_id = result.segments[0]['event_id']        
+            result.true_event_id = st_event_id #result.segments[0]['event_id']        
             interactions_array  = np.array(self._interactions)
             event_interactions = interactions_array[interactions_array['event_id'] == result.true_event_id]
             for ixn_idx, ixn in enumerate(event_interactions):

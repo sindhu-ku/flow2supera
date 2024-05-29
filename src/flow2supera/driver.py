@@ -125,18 +125,18 @@ class SuperaDriver(edep2supera.edep2supera.SuperaDriver):
        
             supera_event.reserve(len(data.trajectories))
 
-            trajectory_ids = data.trajectories['file_traj_id']
+            trajectory_ids = data.trajectories['traj_id']
             unique_trajectory_ids = set(trajectory_ids)
             print('Num unique trajectory IDs:', len(unique_trajectory_ids))
 
             # 1. Loop over trajectories, create one supera::ParticleInput for each
             #    store particle inputs in list to fill parent information later
-            #max_trajectory_id = max(data.trajectories['file_traj_id'].max(), data.segments['file_traj_id'].max())
+            #max_trajectory_id = max(data.trajectories['traj_id'].max(), data.segments['traj_id'].max())
 
-            #Note: traj_id is not unique for the file due to merging of flow files, so use 'file_traj_id'
-            #max_trajectory_id = data.trajectories['file_traj_id'].max()
-            max_trajectory_id = max(data.trajectories['file_traj_id'],default=-1)
-            # max_segment_id = data.segments['file_traj_id'].max()
+            #Note: traj_id is not unique for the file due to merging of flow files, so use 'traj_id'
+            #max_trajectory_id = data.trajectories['traj_id'].max()
+            max_trajectory_id = max(data.trajectories['traj_id'],default=-1)
+            # max_segment_id = data.segments['traj_id'].max()
             if verbose: print('Max trajectory ID:', max_trajectory_id)
 
             # When we start constructing Supera::EDeps, we'll need a map from the local 
@@ -144,27 +144,23 @@ class SuperaDriver(edep2supera.edep2supera.SuperaDriver):
             # EDeps to the right pcloud. 
             # TODO This will get enormous for large trajectory IDs. How should we handle this?
             self._trajectory_id_to_index.resize(int(max_trajectory_id + 1), supera.kINVALID_INDEX)
-            trajectories_dict = {}
-            for traj in data.trajectories:
-                key = (int(traj['traj_id']), int(traj['event_id']), int(traj['vertex_id']))
-                trajectories_dict[key] = int(traj['file_traj_id'])
-            
+
             for traj in data.trajectories:
                 
                 part_input = supera.ParticleInput()
 
                 part_input.valid = True
-                part_input.part  = self.TrajectoryToParticle(traj, trajectories_dict)
+                part_input.part  = self.TrajectoryToParticle(traj)
                 part_input.part.id = supera_event.size()
                 if self.GetLogger().verbose():
                     if verbose:
                         print('TrackID',part_input.part.trackid,
                             'PDG',part_input.part.pdg,
                             'Energy',part_input.part.energy_init)
-                if traj['file_traj_id'] < 0:
-                    print('Negative track ID found',traj['file_traj_id'])
+                if traj['traj_id'] < 0:
+                    print('Negative track ID found',traj['traj_id'])
                     raise ValueError
-                self._trajectory_id_to_index[int(traj['file_traj_id'])] = part_input.part.id
+                self._trajectory_id_to_index[int(traj['traj_id'])] = part_input.part.id
                 supera_event.push_back(part_input)
 
             print('Trajectory ID to Index map len:', len(self._trajectory_id_to_index))
@@ -204,7 +200,7 @@ class SuperaDriver(edep2supera.edep2supera.SuperaDriver):
                     segment_id = backtracked_hit['segment_id'][contrib]
                     segment_index = segment_id_to_index[segment_id]
                     segment = data.segments[segment_index]
-                    trajectory_id = int(segment['file_traj_id'])
+                    trajectory_id = int(segment['traj_id'])
                     edep.dedx = segment['dEdx']
                     edep.e = reco_hit['E'] * backtracked_hit['fraction'][contrib]
                     supera_event_index = self._trajectory_id_to_index[trajectory_id]
@@ -230,9 +226,9 @@ class SuperaDriver(edep2supera.edep2supera.SuperaDriver):
 
         return supera_event
 
-    def TrajectoryToParticle(self, trajectory, trajectories_dict):
+    def TrajectoryToParticle(self, trajectory):
         ### What we have access to in new flow format: ###
-        # ('event_id', 'vertex_id', 'file_traj_id', 'traj_id', 'parent_id', 'E_start', 'pxyz_start', 
+        # ('event_id', 'vertex_id', 'traj_id', 'local_traj_id', 'parent_id', 'E_start', 'pxyz_start', 
         # 'xyz_start', 't_start', 'E_end', 'pxyz_end', 'xyz_end', 't_end', 'pdg_id', 
         # 'start_process', 'start_subprocess', 'end_process', 'end_subprocess')
         ###############################################################################################
@@ -242,8 +238,8 @@ class SuperaDriver(edep2supera.edep2supera.SuperaDriver):
         # but Supera/LArCV want a regular int, hence the type casting
         p.id             = int(trajectory['event_id'])
         p.interaction_id = int(trajectory['vertex_id'])
-        p.trackid        = int(trajectory['file_traj_id']) # Unique among all files used in truth-matching for MLreco
-        p.genid = int(trajectory['traj_id'])
+        p.trackid        = int(trajectory['traj_id']) # Unique among all files used in truth-matching for MLreco
+        p.genid = int(trajectory['local_traj_id'])
         p.pdg            = int(trajectory['pdg_id'])
         p.px = trajectory['pxyz_start'][0] 
         p.py = trajectory['pxyz_start'][1] 
@@ -270,14 +266,10 @@ class SuperaDriver(edep2supera.edep2supera.SuperaDriver):
 
         traj_parent_id = trajectory['parent_id']
         # Trajectory ID of -1 corresponds to a primary particle
+
         if traj_parent_id == -1: p.parent_trackid = p.trackid
-        else: 
-            key = (int(trajectory['parent_id']), int(trajectory['event_id']), int(trajectory['vertex_id']))
-            if key in trajectories_dict:
-                p.parent_trackid = trajectories_dict[key]
-            else:
-                print("Parent trajectory not found!!!")
-                raise ValueError
+        else:                    p.parent_trackid = int(trajectory['parent_id'])
+       
             
         
         if supera.kINVALID_TRACKID in [p.trackid, p.parent_trackid]:
