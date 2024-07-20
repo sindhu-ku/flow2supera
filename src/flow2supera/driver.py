@@ -86,7 +86,7 @@ class SuperaDriver(edep2supera.edep2supera.SuperaDriver):
         self._search_association=True
         self._cluster_size_limit = 5
         self._dbscan_dist = 0.4435 * 1.99
-        self._dbscan=DBSCAN(eps=self._dbscan_dist,min_samples=1)
+        self._dbscan=DBSCAN(eps=self._dbscan_dist,min_samples=1,n_jobs=-1)
 
 
         print("Initialized SuperaDriver class")

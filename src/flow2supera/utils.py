@@ -160,15 +160,18 @@ def run_supera(out_file='larcv.root',
         #    print('[ERROR] Entry', entry, 'is not valid; skipping')
         #    continue
         time_read = time.time() - t0
+        print("--- reading input   {:.2e} seconds ---".format(time_read))
         
         t1 = time.time()
         EventInput = driver.ReadEvent(input_data)
         time_convert = time.time() - t1
+        print("--- data conversion {:.2e} seconds ---".format(time_convert))
 
         t2 = time.time()
         driver.GenerateImageMeta(EventInput)
         driver.GenerateLabel(EventInput) 
         time_generate = time.time() - t2
+        print("--- label creation  {:.2e} seconds ---".format(time_generate))
 
         # Perform an integrity check
         if save_log:
@@ -229,9 +232,10 @@ def run_supera(out_file='larcv.root',
         writer.set_id(0, 0, int(input_data.event_id))
         writer.save_entry()
         time_store = time.time() - t3
+        print("--- storing output  {:.2e} seconds ---".format(time_store))
 
         time_event = time.time() - t0
-        print("--- running driver  {:.2e} seconds ---".format(time_event))
+        print("--- driver total    {:.2e} seconds ---".format(time_event))
 
         if save_log:
             logger['event_id'].append(input_data.event_id)
