@@ -210,7 +210,9 @@ class InputReader:
         print('         corresponding event IDs stored:',[list(ids) for ids in bad_event_ids])
 
         # Find other impacted entries
-        bad_event_ids = np.unique(np.concatenate(bad_event_ids))
+        if len(bad_event_ids):
+            bad_event_ids=np.concatenate(bad_event_ids)
+        bad_event_ids = np.unique(bad_event_ids)
         mask=np.zeros(len(self._event_hit_indices),dtype=bool)
         for bad_id in bad_event_ids:
             mask = mask | (eid_val == bad_id)
