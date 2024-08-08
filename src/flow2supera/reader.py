@@ -187,10 +187,14 @@ class InputReader:
         eid_ctr = np.zeros(len(self._event_hit_indices),dtype=int)
         eid_val = np.full(len(self._event_hit_indices),fill_value=-1,dtype=int)
         bad_event_ids = []
-
+        empty_entries = []
+        
         print('Checking the event IDs in this file...')
         for entry,(hidx_min,hidx_max) in tqdm.tqdm(enumerate(self._event_hit_indices),desc='Scanning event IDs'):
             bhits = self._backtracked_hits[hidx_min:hidx_max]
+            if len(bhits) == 0: 
+                empty_entries.append(entry)
+                continue
             ids_this=self.GetEventIDFromSegments(bhits)
             if not len(ids_this) == 1:
                 eid_ctr[entry] = len(ids_this)
@@ -201,8 +205,14 @@ class InputReader:
 
         bad_entries = (eid_val == -1).nonzero()[0]
         
+        # Filter out bad entries that are in empty_entries
+        bad_entries = [entry for entry in bad_entries if entry not in empty_entries]
+        
+        if len(empty_entries) > 0:
+            print('WARNING: These entries have no hits:', empty_entries)
+ 
         if len(bad_entries) > 0:
-            print('WARNING: entries where more than one event ID is found or no hits found:',bad_entries)
+            print('WARNING: entries where more than one event ID is found:',bad_entries)
             print('         corresponding event IDs stored:',[list(ids) for ids in bad_event_ids])
 
         # Find other impacted entries
@@ -218,6 +228,9 @@ class InputReader:
         entry_mask = mask | (eid_val == -1)
         eid_val[entry_mask] = -1
 
+        if bad_entries:
+            raise ValueError("ERROR: Terminating due to multiple true event id association. Check simulation")
+            
         return eid_val
         
 
