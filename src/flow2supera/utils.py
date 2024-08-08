@@ -5,8 +5,29 @@ import flow2supera
 import ROOT
 import yaml
 from yaml import Loader
-from edep2supera.utils import get_iomanager, larcv_meta, larcv_particle, larcv_neutrino
 from larcv import larcv
+from edep2supera.utils import get_iomanager, larcv_meta, larcv_particle, larcv_neutrino
+#from LarpixParser import event_parser as EventParser
+
+def get_iomanager(outname):
+    import tempfile
+    cfg='''                                                                                                                                          
+IOManager: {                                                                                                                                         
+  Verbosity:   2                                                                                                                                     
+  Name:        "IOManager"                                                                                                                           
+  IOMode:      1                                                                                                                                     
+  OutFileName: "%s"                                                                                                                                  
+}                                                                                                                                                    
+'''
+    #f=open('tmp.cfg','w')                                                                                                                           
+    f=tempfile.NamedTemporaryFile(mode='w')
+    f.write(cfg % outname)
+    f.flush()
+    o = larcv.IOManager(f.name)
+    o.initialize()
+    f.close()
+    return o
+
 
 def get_flow2supera(config_key):
 
@@ -86,8 +107,8 @@ def run_supera(out_file='larcv.root',
     writer = get_iomanager(out_file)
   
     driver = get_flow2supera(config_key)
-    reader = flow2supera.reader.FlowReader(driver.parser_run_config(), in_file,config_key)
-    
+
+    reader = flow2supera.reader.InputReader(driver.parser_run_config(), in_file,config_key)
     if config_key:
         if os.path.isfile(config_key):
             file=config_key
@@ -97,9 +118,7 @@ def run_supera(out_file='larcv.root',
             cfg=yaml.load(f.read(),Loader=Loader)
             if 'Type' in cfg.keys():
                 is_sim=cfg.get('Type')[0]=='sim'
-    
-    
-    
+
     id_vv = ROOT.std.vector("std::vector<unsigned long>")()
     value_vv = ROOT.std.vector("std::vector<float>")()
 
@@ -136,29 +155,56 @@ def run_supera(out_file='larcv.root',
         num_events -= 1 
 
         print(f'Processing Entry {entry}')
-        input_data = reader.GetEvent(entry)
+
+        t0 = time.time()
+        input_data = reader.GetEntry(entry)
         reader.EventDump(input_data)
+   
+        time_read = time.time() - t0
+        print("--- reading input   {:.2e} seconds ---".format(time_read))
+
+        t1 = time.time()
+        EventInput = driver.ReadEvent(input_data)
+        time_convert = time.time() - t1
+        print("--- data conversion {:.2e} seconds ---".format(time_convert))
+      
+        t2 = time.time()
+        driver.GenerateImageMeta(EventInput)
 
         # Perform an integrity check
         if save_log:
-            log_supera_integrity_check(EventInput, driver, logger, verbose)
+            log_supera_integrity_check(EventInput, driver, logger, verbose=False)
             
-        EventInput = driver.ReadEvent(input_data,is_sim=is_sim)
-        driver.GenerateImageMeta(EventInput)
         meta   = larcv_meta(driver.Meta())
-        tensor_packets = writer.get_data("sparse3d", "packets")
+        tensor_hits = writer.get_data("sparse3d", "hits")
+        
         if not is_sim:
             driver.Meta().edep2voxelset(EventInput.unassociated_edeps).fill_std_vectors(id_v, value_v)
-            larcv.as_event_sparse3d(tensor_packets, meta, id_v, value_v)
-        if is_sim:
+            larcv.as_event_sparse3d(tensor_hits, meta, id_v, value_v)
+      
+        if is_sim:            
+            if input_data.trajectories is None:
+                print(f'[SuperaDriver] WARNING skipping this entry {entry} as it appears to be "empty" (no truth association found, non-unique event id, etc.)')
+                continue
             driver.Meta().edep2voxelset(driver._edeps_all).fill_std_vectors(id_v, value_v)
-            larcv.as_event_sparse3d(tensor_packets, meta, id_v, value_v)
+            larcv.as_event_sparse3d(tensor_hits, meta, id_v, value_v)
             driver.GenerateLabel(EventInput) 
+            time_generate = time.time() - t2
+            print("--- label creation  {:.2e} seconds ---".format(time_generate))
+
             # Start data store process
+            t3 = time.time()
+
             result = driver.Label()
             tensor_energy = writer.get_data("sparse3d", "pcluster")
             result.FillTensorEnergy(id_v, value_v)
             larcv.as_event_sparse3d(tensor_energy, meta, id_v, value_v)
+            
+            # Check the input image and label image match in the voxel set
+            ids_input = np.array([v.id() for v in tensor_energy.as_vector()])
+            ids_label = np.array([v.id() for v in tensor_hits.as_vector()])
+            #This does not work for MR5, fix it if it changes for future simulation
+            #assert np.allclose(ids_input,ids_label), '[SuperaDriver] ERROR: the label and input data has different set of voxels'
 
             tensor_semantic = writer.get_data("sparse3d", "pcluster_semantics")
             result.FillTensorSemantic(id_v, value_v)
@@ -182,9 +228,14 @@ def run_supera(out_file='larcv.root',
             #Fill mc truth neutrino interactions
             interaction = writer.get_data("neutrino", "mc_truth")
             for ixn in input_data.interactions:
+                if isinstance(ixn,np.void):
+                    continue
                 larn = larcv_neutrino(ixn)
                 interaction.append(larn)
             
+            time_store = time.time() - t3
+            print("--- storing output  {:.2e} seconds ---".format(time_store))
+
         #propagating trigger info
         trigger = writer.get_data("trigger", "base")
         trigger.id(int(input_data.event_id))  # fixme: this will need to be different for real data?
@@ -195,10 +246,9 @@ def run_supera(out_file='larcv.root',
         writer.set_id(0, 0, int(input_data.event_id))
         writer.save_entry()
 
-    
-   
+        time_event = time.time() - t0
+        print("--- driver total    {:.2e} seconds ---".format(time_event))
 
-    
     writer.finalize()
 
     
