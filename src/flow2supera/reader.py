@@ -82,11 +82,11 @@ class InputReader:
         packets_path           = 'charge/packets'
         calib_final_hits_path  = 'charge/calib_final_hits/data'
         calib_prompt_hits_path = 'charge/calib_prompt_hits/data'
-        if self._is_sim:
-            backtracked_hits_path  = 'mc_truth/calib_prompt_hit_backtrack/data'
-            interactions_path      = 'mc_truth/interactions/data'
-            segments_path          = 'mc_truth/segments/data'
-            trajectories_path      = 'mc_truth/trajectories/data'
+
+        backtracked_hits_path  = 'mc_truth/calib_prompt_hit_backtrack/data'
+        interactions_path      = 'mc_truth/interactions/data'
+        segments_path          = 'mc_truth/segments/data'
+        trajectories_path      = 'mc_truth/trajectories/data'
         
         # TODO Currently only reading one input file at a time. Is it 
         # necessary to read multiple? If so, how to handle non-unique
@@ -101,6 +101,7 @@ class InputReader:
             self._event_t0s = events_data['unix_ts'] + events_data['ts_start']/1e7 
             self._event_hit_indices = flow_manager[event_hit_indices_path]
             self._hits              = flow_manager[calib_prompt_hits_path]
+            #self._is_sim = 'mc_truth' in fin.keys()
             if self._is_sim:
                 self._backtracked_hits  = flow_manager[backtracked_hits_path]
                 self._segments     = np.array(flow_manager[segments_path])
@@ -201,7 +202,7 @@ class InputReader:
         bad_entries = (eid_val == -1).nonzero()[0]
         
         if len(bad_entries) > 0:
-            print('WARNING: entries where more than one event ID is found:',bad_entries)
+            print('WARNING: entries where more than one event ID is found or no hits found:',bad_entries)
             print('         corresponding event IDs stored:',[list(ids) for ids in bad_event_ids])
 
         # Find other impacted entries
