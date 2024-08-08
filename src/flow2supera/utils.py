@@ -203,8 +203,8 @@ def run_supera(out_file='larcv.root',
             # Check the input image and label image match in the voxel set
             ids_input = np.array([v.id() for v in tensor_energy.as_vector()])
             ids_label = np.array([v.id() for v in tensor_hits.as_vector()])
-            #This does not work for MR5, fix it if it changes for future simulation
-            #assert np.allclose(ids_input,ids_label), '[SuperaDriver] ERROR: the label and input data has different set of voxels'
+ 
+            assert np.allclose(ids_input,ids_label), '[SuperaDriver] ERROR: the label and input data has different set of voxels'
 
             tensor_semantic = writer.get_data("sparse3d", "pcluster_semantics")
             result.FillTensorSemantic(id_v, value_v)
