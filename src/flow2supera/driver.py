@@ -139,50 +139,40 @@ class SuperaDriver(edep2supera.edep2supera.SuperaDriver):
                 self._run_config[key]=val
         return True
 
-    def ConfigureFromFile(self,fname):
-        with open(fname,'r') as f:
-            cfg=yaml.load(f.read(),Loader=Loader)
-            if not self.LoadPropertyConfigs(cfg):
-                raise ValueError('Failed to configure larnd2supera!')
-            self._electron_energy_threshold = cfg.get('ElectronEnergyThreshold',
-                self._electron_energy_threshold
-                )
-            self._ass_distance_limit = cfg.get('AssDistanceLimit',
-                self._ass_distance_limit)
-            self._ass_charge_limit = cfg.get('AssChargeLimit',
-                self._ass_charge_limit)
-            self._ass_fraction_limit = cfg.get('AssFractionLimit',
-                self._ass_fraction_limit)
-            self._search_association = cfg.get('SearchAssociation',
-                self._search_association)
-            self._cluster_size_limit = cfg.get('ClusterSizeLimit',
-                self._cluster_size_limit)
-            self._dbscan_dist = cfg.get('DBSCANDist',
-                self._dbscan_dist)
-            self._dbscan=DBSCAN(eps=self._dbscan_dist,min_samples=1,n_jobs=-1)
 
+    def ConfigureFromFile(self,fname):
+        cfg_txt = open(fname,'r').read()
+        self.ConfigureFromText(cfg_txt)
         super().ConfigureFromFile(fname)
 
+
     def ConfigureFromText(self,txt):
+
         cfg=yaml.load(txt, Loader=Loader)
+
         if not self.LoadPropertyConfigs(cfg):
             raise ValueError('Failed to configure flow2supera!')
-            self._electron_energy_threshold = cfg.get('ElectronEnergyThreshold',
-                self._electron_energy_threshold
-                )
-            self._ass_distance_limit = cfg.get('AssDistanceLimit',
+
+        if 'LabelConfig' in cfg:
+            alg_cfg = cfg['LabelConfig']
+
+            self._electron_energy_threshold = alg_cfg.get('ElectronEnergyThreshold',
+                self._electron_energy_threshold)
+            self._ass_distance_limit = alg_cfg.get('AssDistanceLimit',
                 self._ass_distance_limit)
-            self._ass_charge_limit = cfg.get('AssChargeLimit',
+            self._ass_charge_limit = alg_cfg.get('AssChargeLimit',
                 self._ass_charge_limit)
-            self._ass_fraction_limit = cfg.get('AssFractionLimit',
+            self._ass_fraction_limit = alg_cfg.get('AssFractionLimit',
                 self._ass_fraction_limit)
-            self._search_association = cfg.get('SearchAssociation',
+            self._search_association = alg_cfg.get('SearchAssociation',
                 self._search_association)
-            self._cluster_size_limit = cfg.get('ClusterSizeLimit',
+            self._cluster_size_limit = alg_cfg.get('ClusterSizeLimit',
                 self._cluster_size_limit)
             self._dbscan_dist = cfg.get('DBSCANDist',
                 self._dbscan_dist)
             self._dbscan=DBSCAN(eps=self._dbscan_dist,min_samples=1,n_jobs=-1)
+
+        print(self._ass_charge_limit,self._ass_fraction_limit)
 
         super().ConfigureFromText(txt)
 
@@ -307,6 +297,11 @@ class SuperaDriver(edep2supera.edep2supera.SuperaDriver):
         check_ana_sum=0
 
         backtracked_hits = data.backtracked_hits
+        if len(backtracked_hits):
+            packet_seg_idx = np.zeros_like(backtracked_hits[0]['fraction']).astype(int)
+            packet_seg_pdg = np.zeros_like(packet_seg_idx).astype(int)
+            packet_seg_trkid = np.zeros_like(packet_seg_idx).astype(int)
+
         # TODO Calculate the length of this in advance and use reserve; appending is slow!
         for i_bt, bhit in enumerate(backtracked_hits):
 
@@ -322,23 +317,31 @@ class SuperaDriver(edep2supera.edep2supera.SuperaDriver):
             check_raw_sum += reco_hit['E']
 
             # We analyze and modify segments and fractions, so make a copy
-            packet_segments  = np.array(bhit['segment_ids'])
+            packet_seg_ids   = np.array(bhit['segment_ids'])
             packet_fractions = np.array(bhit['fraction'  ])
-            packet_edeps = [None] * len(packet_segments)
+            packet_edeps = [None] * len(packet_seg_ids)
+            packet_seg_idx[:]=-1
+            packet_seg_pdg[:]=0
+
+            mask = ~(packet_seg_ids < 0)
+            packet_seg_idx[mask] = self._segid2idx[packet_seg_ids[mask]]
+            segments = data.segments[packet_seg_idx[mask]]
+            packet_seg_pdg[mask] = segments['pdg_id']
+            packet_seg_trkid[mask] = segments['traj_id']
 
             #
             # Check packet segments quality
             # - any association?
             # - Saturated?
             # - nan?
-            if (packet_fractions == 0.).sum() == len(packet_segments):
+            if (packet_fractions == 0.).sum() == len(packet_seg_ids):
                 if verbose > 0:
                     print('[WARNING] found a packet with no association!')
                 if not self._log is None:
                     self._log['packet_noass_input'][-1] += 1
             if not 0. in packet_fractions:
                 if verbose > 1:
-                    print('[INFO] found',len(packet_segments),'associated track IDs maxing out the recording array size')
+                    print('[INFO] found',len(packet_seg_ids),'associated track IDs maxing out the recording array size')
                 if not self._log is None:
                     self._log['ass_saturation'][-1] += 1
             if np.isnan(packet_fractions).sum() > 0:
@@ -349,7 +352,7 @@ class SuperaDriver(edep2supera.edep2supera.SuperaDriver):
 
             # Initialize seg_flag once 
             if seg_flag is None:
-                seg_flag = np.zeros(len(packet_segments),bool)
+                seg_flag = np.zeros(len(packet_seg_ids),bool)
 
 
             if not self._log is None:
@@ -362,16 +365,40 @@ class SuperaDriver(edep2supera.edep2supera.SuperaDriver):
             seg_flag = ~(np.isnan(packet_fractions))
             # 0. mask zero fraction index
             seg_flag = seg_flag & (packet_fractions > 0.)
+
+
+            #
+            # Apply fraction limit by particle ID (not segment id)
+            #
+            for track_id in np.unique(packet_seg_trkid):
+                if track_id <0: continue
+                include = True
+                mask = packet_seg_trkid == track_id
+                frac_sum = packet_fractions[mask].sum()
+                if frac_sum < self._ass_fraction_limit:
+                    include = False
+                if (frac_sum * raw_edep.e) < self._ass_charge_limit:
+                    include = False
+                if not include:
+                    seg_flag[mask] = include
+                #if track_id == 5:
+                #    if (43 < raw_edep.x < 45) and (50 < raw_edep.y < 53) and (21 < raw_edep.z < 26):
+                #        print(self._ass_charge_limit,self._ass_fraction_limit)
+                #        print(f'({raw_edep.x,raw_edep.y,raw_edep.z}) ... frac {frac_sum} ... E {raw_edep.e} ... {(frac_sum * raw_edep.e)} include? {include}')
+
+
             # 1. mask too small fraction
-            seg_flag = seg_flag & (packet_fractions > self._ass_fraction_limit)
+            #seg_flag = seg_flag & (packet_fractions > self._ass_fraction_limit)
             # 2. with too small (true energy * fraction)
-            seg_flag = seg_flag & ((packet_fractions * raw_edep.e) > self._ass_charge_limit)
+            #seg_flag = seg_flag & ((packet_fractions * raw_edep.e) > self._ass_charge_limit)
+            #if (43 < raw_edep.x < 45) and (50 < raw_edep.y < 53) and (21 < raw_edep.z < 26):
+            #    print(f'({raw_edep.x,raw_edep.y,raw_edep.z}) ... frac {packet_fractions} ... E {raw_edep.e} ... {(packet_fractions * raw_edep.e)}')
 
             # Step 1. Compute the distance and reject some segments (see above comments for details)
-            for it in range(packet_segments.shape[0]):
+            for it in range(packet_seg_ids.shape[0]):
                 if not seg_flag[it]:
                     continue
-                seg_idx = self._segid2idx[packet_segments[it]]
+                seg_idx = self._segid2idx[packet_seg_ids[it]]
                 # Access the segment
                 seg = data.segments[seg_idx]
                 # Compute the Point of Closest Approach as well as estimation of time.
@@ -417,7 +444,7 @@ class SuperaDriver(edep2supera.edep2supera.SuperaDriver):
                 packet_fractions[seg_flag] /= fsum
 
                 for idx in np.where(seg_flag)[0]:
-                    seg_idx = self._segid2idx[packet_segments[idx]]
+                    seg_idx = self._segid2idx[packet_seg_ids[idx]]
                     seg = data.segments[seg_idx]
                     packet_edeps[idx].e = raw_edep.e * packet_fractions[idx]
                     key = (int(seg['traj_id']), int(seg['event_id']), int(seg['vertex_id']))
@@ -430,8 +457,8 @@ class SuperaDriver(edep2supera.edep2supera.SuperaDriver):
             if verbose > 1:
                 print('[INFO] Assessing packet',ip)
                 print('       Associated?',seg_flag.sum())
-                print('       Segments :', packet_segments)
-                print('       TrackIDs :', [data.segments[self._segid2idx[packet_segments[idx]]]['traj_id'] for idx in range(packet_segments.shape[0])])
+                print('       Segments :', packet_seg_ids)
+                print('       TrackIDs :', [data.segments[self._segid2idx[packet_seg_ids[idx]]]['traj_id'] for idx in range(packet_seg_ids.shape[0])])
                 print('       Fractions:', ['%.3f' % f for f in packet_fractions])
                 print('       Energy   : %.3f' % dE[ip])
                 print('       Position :', ['%.3f' % f for f in [x[ip]*self._mm2cm,y[ip]*self._mm2cm,z[ip]*self._mm2cm]])
@@ -477,114 +504,7 @@ class SuperaDriver(edep2supera.edep2supera.SuperaDriver):
             sp.pcloud = pcloud
 
         if verbose:
-            print("--- filling edep %s seconds ---" % (time.time() - start_time))
 
-        print('Unassociated edeps',self._edeps_unassociated.size())
-        if self._search_association:
-            import tqdm
-            # Attempt to associate unassociated edeps
-            failed_unass = std.vector('supera::EDep')()
-            for iedep, edep in tqdm.tqdm(enumerate(self._edeps_unassociated)):
-                #print('Searching for EDep',iedep,'/',self._edeps_unassociated.size())
-                ass_found=False
-                for seg in data.segments:
-
-                    xyz = np.array([edep.x,edep.y,edep.z])
-                    if not self.associated_along_drift(seg,xyz,False):
-                        continue
-
-                    seg_pt0.x, seg_pt0.y, seg_pt0.z = seg['x_start'], seg['y_start'], seg['z_start']
-                    seg_pt1.x, seg_pt1.y, seg_pt1.z = seg['x_end'], seg['y_end'], seg['z_end']
-                    packet_pt.x, packet_pt.y, packet_pt.z = edep.x, edep.y, edep.z
-
-                    edep_time = 0 
-                    if seg['t0_start'] < seg['t0_end']:
-                        time_frac = self.PoCA(seg_pt0,seg_pt1,packet_pt,scalar=True)
-                        edep_time = seg['t0_start'] + time_frac * (seg['t0_end'  ] - seg['t0_start'])
-                        poca_pt = seg_pt0 + (seg_pt1 - seg_pt0) * time_frac
-                    else:
-                        time_frac = self.PoCA(seg_pt1,seg_pt0,packet_pt,scalar=True)
-                        edep_time = seg['t0_end'  ] + time_frac * (seg['t0_start'] - seg['t0_end'  ])
-                        poca_pt = seg_pt1 + (seg_pt0 - seg_pt1) * time_frac
-
-                    seg_dist = poca_pt.distance(packet_pt)
-                    if seg_dist < self._ass_distance_limit:
-                        #associate
-                        edep.dedx = seg['dEdx']
-                        edep.t    = edep_time
-                        supera_event[int(self._trackid2idx[int(seg['file_traj_id'])])].pcloud.push_back(edep)
-
-                        ass_found=True
-                        break
-                if not ass_found:
-                    failed_unass.push_back(edep)
-                    if verbose:
-                        print(f'Found unassociated edep ({iedep}th) ... Energy={edep.e}')
-
-                #print('    Found so far:',failed_unass.size())
-            self._edeps_unassociated.clear()
-            self._edeps_unassociated = failed_unass
-            print('After recovery attempt, unassociated edeps count:',self._edeps_unassociated.size())
-
-        if not self._log is None:
-            self._log['packet_noass'][-1] = self._edeps_unassociated.size()
-            self._log['packet_ctr'][-1]   = len(data.hits)
-
-        print('Unassociated edeps',self._edeps_unassociated.size())
-
-
-        if not self._log is None:
-
-            self._log['residual_q'][-1] = check_raw_sum - check_ana_sum
-
-            if self._log['packet_ctr'][-1]>0:
-                self._log['ass_frac'][-1]        /= self._log['packet_ctr'][-1]
-                self._log['ass_charge_frac'][-1] /= self._log['packet_ctr'][-1]
-                self._log['packet_frac_sum'][-1] /= self._log['packet_ctr'][-1]
-                self._log['ass_drop_charge'][-1] /= self._log['packet_ctr'][-1]
-                self._log['ass_drop_dist'][-1]   /= self._log['packet_ctr'][-1]
-
-            if self._log['packet_noass'][-1]:
-                value_bad, value_frac = self._log['packet_noass'][-1], self._log['packet_noass'][-1]/self._log['packet_ctr'][-1]*100.
-                print(f'    [WARNING]: {value_bad} packets ({value_frac} %) had no MC track association')
-
-            if self._log['fraction_nan'][-1]:
-                value_bad, value_frac = self._log['fraction_nan'][-1], self._log['fraction_nan'][-1]/self._log['packet_ctr'][-1]*100.
-                print(f'    [WARNING]: {value_bad} packets ({value_frac} %) had nan fractions associated')
-
-            if self._log['packet_frac_sum'][-1]<0.9999:
-                print(f'    [WARNING] some input packets have the fraction sum < 1.0 (average over packets {self._log["packet_frac_sum"]})')
-
-            if self._log['ass_frac'][-1]<0.9999:
-                print(f'    [WARNING] associated packet count fraction to the total is {self._log["ass_frac"][-1]} (<1.0)')
-
-            if self._log['ass_charge_frac'][-1]<0.9999:
-                print(f'    [WARNING] the average of summed fractions after charge/dist cut {self._log["ass_charge_frac"]}')
-
-            if self._log['ass_drop_charge'][-1]>0.0001:
-                print(f'    [WARNING] the average of associated fraction dropped due to charge cut: {self._log["ass_drop_charge"]}')
-
-            if self._log['ass_drop_dist'][-1]>0.0001:
-                print(f'    [WARNING] the average of associated fraction dropped due to distance cut: {self._log["ass_drop_dist"]}')
-
-            if self._log['drop_ctr_total'][-1]:
-                for key in self._log.keys():
-                    if not str(key).startswith('drop_ctr'):
-                        continue
-                    print(key,self._log[key])
-
-
-            #if self._log['bad_track_id'][-1]:
-            #    print(f'    WARNING: {self._log["bad_track_id"][-1]} invalid track IDs found in the association')
-
-        if abs(check_raw_sum - check_ana_sum)>0.1:
-            print('[WARNING] large disagreement in the sum packet values:')
-            print('    Raw sum:',check_raw_sum)
-            print('    Accounted sum:',check_ana_sum)
-
-        supera_event.unassociated_edeps = self._edeps_unassociated
-
-        if verbose:
             print("--- Finising ReadEvent %s seconds ---" % (time.time() - read_event_start_time))
 
         return supera_event
@@ -601,7 +521,7 @@ class SuperaDriver(edep2supera.edep2supera.SuperaDriver):
         # Larnd-sim stores a lot of these fields as numpy.uint32, 
         # but Supera/LArCV want a regular int, hence the type casting
         p.interaction_id = int(trajectory['vertex_id'])
-        p.trackid        = int(trajectory['traj_id']) # Unique among all files used in truth-matching for MLreco
+        p.trackid        = int(trajectory['traj_id']) 
         p.genid = int(trajectory['traj_id'])
         p.pdg            = int(trajectory['pdg_id'])
         p.px = trajectory['pxyz_start'][0]
