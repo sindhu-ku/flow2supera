@@ -170,7 +170,7 @@ class SuperaDriver(edep2supera.edep2supera.SuperaDriver):
                 self._cluster_size_limit)
             self._dbscan_dist = cfg.get('DBSCANDist',
                 self._dbscan_dist)
-            self._dbscan=DBSCAN(eps=self._dbscan_dist,min_samples=1)
+            self._dbscan=DBSCAN(eps=self._dbscan_dist,min_samples=1,n_jobs=-1)
 
         print(self._ass_charge_limit,self._ass_fraction_limit)
 

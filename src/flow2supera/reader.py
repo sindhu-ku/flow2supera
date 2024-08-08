@@ -107,16 +107,19 @@ class InputReader:
                 self._segments     = np.array(flow_manager[segments_path])
                 self._trajectories = np.array(flow_manager[trajectories_path])
                 self._interactions = np.array(flow_manager[interactions_path])
+                
+                # Make explicit reference to segment ids and entry index array
+                self._segment_ids = self._segments['segment_id']
+                self._segment_idx = np.arange(len(self._segments))
+                self._segment_event_ids = self._segments['event_id']
 
-        # This next bit is only necessary if reading multiple files
-        # Stack datasets so that there's a "file index" preceding the event index
-        #self._event_ids = np.stack(event_ids)
-        #self._event_ids = np.concatenate(event_ids)
-        #self._event_t0s = np.stack(t0s)
-        #self._calib_final_hits = np.stack(calib_final_hits)
-        #self._t0s = np.stack(t0s)
-        #self._segments = np.stack(segments)
-        #self._trajectories = np.stack(trajectories)
+                # Quality check: event IDs from segments are consistent with the info stored at the event level
+                if not len(self._event_hit_indices) == len(self._event_ids):
+                    print('The number of entries do not match between event_data and backtrack hit range array')
+                    print(event_path,'...',len(self._event_ids))
+                    print(event_hit_indices_path,'...',len(self._event_hit_indices))
+                    raise ValueError('Array length mismatch in the input file')
+                self._valid_segment_event_ids = self.FileQualityCheck()
 
         if not self._is_sim:
             print('Currently only simulation is supoprted')
@@ -157,16 +160,23 @@ class InputReader:
     # To truth associations go as hits -> segments -> trajectories
 
 
-    def GetEventIDFromSegments(self, backtracked_hits, segments):
+    def GetEventIDFromSegments(self, backtracked_hits):
 
         
         try:
-            seg_ids = np.concatenate([bhit['segment_ids'][bhit['fraction']!=0.] for bhit in backtracked_hits])
 
-            mask = [i for i in range(len(segments)) if segments[i]['segment_id'] in seg_ids]
+            seg_ids = np.unique(np.concatenate([bhit['segment_ids'][bhit['fraction']!=0.] for bhit in backtracked_hits]))
 
-            #return np.unique(segments[seg_ids]['event_id'])
-            return np.unique(segments[mask]['event_id'])
+            sid_min,sid_max = seg_ids.min(),seg_ids.max()
+
+            seg_range_mask = (self._segment_ids >= sid_min) & (self._segment_ids <= sid_max)
+
+            event_segs=self._segment_ids[seg_range_mask]
+            event_idxs=self._segment_idx[seg_range_mask]
+
+            seg_mask = [event_idxs[i] for i in range(len(event_segs)) if event_segs[i] in seg_ids]
+
+            return np.unique(self._segment_event_ids[seg_mask])
 
         except ValueError:
             valid_frac_counts = [(bhit['fraction']!=0.).sum() for bhit in backtracked_hits]
@@ -177,12 +187,50 @@ class InputReader:
             return np.array([])
 
 
+    def FileQualityCheck(self):
+
+        import tqdm
+        eid_ctr = np.zeros(len(self._event_hit_indices),dtype=int)
+        eid_val = np.full(len(self._event_hit_indices),fill_value=-1,dtype=int)
+        bad_event_ids = []
+
+        print('Checking the event IDs in this file...')
+        for entry,(hidx_min,hidx_max) in tqdm.tqdm(enumerate(self._event_hit_indices),desc='Scanning event IDs'):
+            bhits = self._backtracked_hits[hidx_min:hidx_max]
+            ids_this=self.GetEventIDFromSegments(bhits)
+            if not len(ids_this) == 1:
+                eid_ctr[entry] = len(ids_this)
+                if len(ids_this):
+                    bad_event_ids.append(ids_this)
+            else:
+                eid_val[entry] = ids_this[0]
+
+        bad_entries = (eid_val == -1).nonzero()[0]
+        print('WARNING: entries where more than one event ID is found:',bad_entries)
+        print('         corresponding event IDs stored:',[list(ids) for ids in bad_event_ids])
+
+        # Find other impacted entries
+        if len(bad_event_ids):
+            bad_event_ids=np.concatenate(bad_event_ids)
+        bad_event_ids = np.unique(bad_event_ids)
+        mask=np.zeros(len(self._event_hit_indices),dtype=bool)
+        for bad_id in bad_event_ids:
+            mask = mask | (eid_val == bad_id)
+        if mask.sum():
+            print('WARNING: other entries impacted by bad event IDs:',mask.nonzero()[0])
+
+        entry_mask = mask | (eid_val == -1)
+        eid_val[entry_mask] = -1
+
+        return eid_val
+        
+            
     def EntryQualityCheck(self, entry):
         
         # this entry
         hidx_min, hidx_max = self._event_hit_indices[entry]
         bhits = self._backtracked_hits[hidx_min:hidx_max]
-        ids_this = self.GetEventIDFromSegments(bhits,self._segments)
+        ids_this = self.GetEventIDFromSegments(bhits)
         if not len(ids_this) == 1:
             print(f'[SuperaDriver] ERROR: this entry {entry} contains multiple event_id values {ids_this}')
             return np.array([])
@@ -191,7 +239,7 @@ class InputReader:
         if entry > 0:
             hidx_min, hidx_max = self._event_hit_indices[entry-1]
             bhits = self._backtracked_hits[hidx_min:hidx_max]
-            ids_prev = self.GetEventIDFromSegments(bhits,self._segments)
+            ids_prev = self.GetEventIDFromSegments(bhits)
             if ids_this[0] in ids_prev:
                 print(f'[SuperaDriver] ERROR: this entry {entry} with event id {ids_this[0]} has some hits mixed into the previous entry {entry-1}')
                 return np.array([])
@@ -199,7 +247,7 @@ class InputReader:
         if entry+1 < len(self._event_ids):
             hidx_min, hidx_max = self._event_hit_indices[entry+1]
             bhits = self._backtracked_hits[hidx_min:hidx_max]
-            ids_next = self.GetEventIDFromSegments(bhits,self._segments)
+            ids_next = self.GetEventIDFromSegments(bhits)
             if ids_this[0] in ids_next:
                 print(f'[SuperaDriver] ERROR: this entry {entry} with event id {ids_this[0]} has some hits mixed into the next entry {entry+1}')
                 return np.array([])
@@ -213,8 +261,14 @@ class InputReader:
             print('Entry {} is above allowed entry index ({})'.format(entry, len(self._event_ids)))
             print('Invalid read request (returning None)')
             return None
-        
+        import time
+
+        t0=time.time()
         result = InputEvent()
+
+        if self._valid_segment_event_ids[entry] < 0:
+            print(f'[SuperaDriver] Skipping this entry ({entry})...')
+            return result
 
         result.event_id = self._event_ids[entry]
 
@@ -226,15 +280,15 @@ class InputReader:
         result.backtracked_hits = self._backtracked_hits[hidx_min:hidx_max]
 
         #st_event_id = self.GetEventIDFromSegments(result.backtracked_hits,self._segments)
-        st_event_id = self.EntryQualityCheck(entry)
+        #st_event_id = self.EntryQualityCheck(entry)
+        #print('Event quality check',time.time()-t0,'[s]')
+        #t0=time.time()
+        #if len(st_event_id) < 1:
+        #    print(f'[SuperaDriver] Skipping this entry ({entry})...')
+        #    return result
+        #assert len(st_event_id)==1, f'Found >1 unique "event_id" from backtracked segments ({st_event_id})'
 
-        if len(st_event_id) < 1:
-            print(f'[SuperaDriver] Skipping this entry ({entry})...')
-            return result
-
-        assert len(st_event_id)==1, f'Found >1 unique "event_id" from backtracked segments ({st_event_id})'
-
-        st_event_id = st_event_id[0]
+        st_event_id = self._valid_segment_event_ids[entry]
 
         result.segments = self._segments[self._segments['event_id']==st_event_id]
         result.trajectories = self._trajectories[self._trajectories['event_id']==st_event_id]
@@ -249,7 +303,7 @@ class InputReader:
                 for ixn_idx, ixn in enumerate(event_interactions):
                     supera_nu = self.GetNeutrinoIxn(ixn, ixn_idx)
                     result.interactions.append(supera_nu)
-            
+        print('SuperaInput filled',time.time()-t0,'[s]')
         return result
  
 
