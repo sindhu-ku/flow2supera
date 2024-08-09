@@ -44,7 +44,7 @@ BBoxConfig:
 LabelAlgorithm: LArTPCMLReco3D
 LabelConfig:
     LogLevel: WARNING
-    DeltaSize:     3
+    DeltaSize:    10
     ComptonSize:  10
     LEScatterSize: 5
     TouchDistance: 1
@@ -52,7 +52,7 @@ LabelConfig:
     SemanticPriority: [1,0,2,3,4]
     EnergyDepositThreshold: 0.0
     AssChargeLimit: 0.09
-    AssFractionLimit: 0.5
+    AssFractionLimit: 0.1
     RewriteInteractionID:  False
     #WorldBoundMax: [-1.e20,-1.e20,-1.e20]
     #WorldBoundMin: [ 1.e20, 1.e20, 1.e20]

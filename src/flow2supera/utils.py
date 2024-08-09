@@ -40,6 +40,7 @@ def get_flow2supera(config_key):
     else:
         driver.ConfigureFromFile(flow2supera.config.get_config(config_key))
     
+
     return driver 
 
 def log_supera_integrity_check(data, driver, log, verbose=False):
@@ -108,6 +109,7 @@ def run_supera(out_file='larcv.root',
     writer = get_iomanager(out_file)
   
     driver = get_flow2supera(config_key)
+
     reader = flow2supera.reader.InputReader(driver.parser_run_config(), in_file,config_key)
 
     id_vv = ROOT.std.vector("std::vector<unsigned long>")()
