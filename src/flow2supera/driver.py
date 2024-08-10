@@ -489,18 +489,20 @@ class SuperaDriver(edep2supera.edep2supera.SuperaDriver):
 
         # DBSCAN unassociated edeps
         pts = np.array([[pt.x,pt.y,pt.z] for pt in self._edeps_unassociated])
-        self._dbscan.fit(pts)
-        cids=np.unique(self._dbscan.labels_)
-        if -1 in cids:
-            raise ValueError('Invalid cluster ID in DBSCAN while analyzing unassociated edeps')
-
         supera_event.unassociated_edeps.clear()
-        supera_event.unassociated_edeps.resize(int(cids.max()+1))
-        for cid in cids:
-            edep_index_v = (self._dbscan.labels_ == cid).nonzero()
-            supera_event.unassociated_edeps[int(cid)].resize(len(edep_index_v))
-            for idx in edep_index_v[0]:
-                supera_event.unassociated_edeps[int(cid)].push_back(self._edeps_unassociated[int(idx)])
+
+        if len(pts):
+            self._dbscan.fit(pts)
+            cids=np.unique(self._dbscan.labels_)
+            if -1 in cids:
+                raise ValueError('Invalid cluster ID in DBSCAN while analyzing unassociated edeps')
+
+            supera_event.unassociated_edeps.resize(int(cids.max()+1))
+            for cid in cids:
+                edep_index_v = (self._dbscan.labels_ == cid).nonzero()
+                supera_event.unassociated_edeps[int(cid)].resize(len(edep_index_v))
+                for idx in edep_index_v[0]:
+                    supera_event.unassociated_edeps[int(cid)].push_back(self._edeps_unassociated[int(idx)])
 
         if verbose:
             print("--- Finising ReadEvent %s seconds ---" % (time.time() - read_event_start_time))
