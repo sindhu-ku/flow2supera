@@ -172,8 +172,6 @@ class SuperaDriver(edep2supera.edep2supera.SuperaDriver):
                 self._dbscan_dist)
             self._dbscan=DBSCAN(eps=self._dbscan_dist,min_samples=1,n_jobs=-1)
 
-        print(self._ass_charge_limit,self._ass_fraction_limit)
-
         super().ConfigureFromText(txt)
 
     def ReadEvent(self, data, is_sim=True,verbose=False):
@@ -288,8 +286,8 @@ class SuperaDriver(edep2supera.edep2supera.SuperaDriver):
         seg_dist  = None
 
         # a list to keep energy depositions w/o true association
-        supera_event.unassociated_edeps.clear() 
-        supera_event.unassociated_edeps.reserve(len(data.hits))
+        self._edeps_unassociated.clear() 
+        self._edeps_unassociated.reserve(len(data.hits))
         self._edeps_all.clear();
         self._edeps_all.reserve(len(data.hits))
 
@@ -427,7 +425,7 @@ class SuperaDriver(edep2supera.edep2supera.SuperaDriver):
             # split the energy among valid, associated packets
             if seg_flag.sum() < 1:
                 # no valid association
-                supera_event.unassociated_edeps.push_back(raw_edep)
+                self._edeps_unassociated.push_back(raw_edep)
                 check_ana_sum += raw_edep.e
                 if not self._log is None:
                     self._log['drop_ctr_total'][-1] += 1
@@ -497,14 +495,30 @@ class SuperaDriver(edep2supera.edep2supera.SuperaDriver):
             for edep_idx in np.where(mask)[0]:
                 pcloud.push_back(sp.pcloud[int(edep_idx)])
 
-            supera_event.unassociated_edeps.reserve(supera_event.unassociated_edeps.size()+int((~mask).sum()))
+            self._edeps_unassociated.reserve(self._edeps_unassociated.size()+int((~mask).sum()))
             for edep_idx in np.where(~mask)[0]:
-                supera_event.unassociated_edeps.push_back(sp.pcloud[int(edep_idx)])
+                self._edeps_unassociated.push_back(sp.pcloud[int(edep_idx)])
 
             sp.pcloud = pcloud
 
-        if verbose:
+        # DBSCAN unassociated edeps
+        pts = np.array([[pt.x,pt.y,pt.z] for pt in self._edeps_unassociated])
+        supera_event.unassociated_edeps.clear()
 
+        if len(pts):
+            self._dbscan.fit(pts)
+            cids=np.unique(self._dbscan.labels_)
+            if -1 in cids:
+                raise ValueError('Invalid cluster ID in DBSCAN while analyzing unassociated edeps')
+
+            supera_event.unassociated_edeps.resize(int(cids.max()+1))
+            for cid in cids:
+                edep_index_v = (self._dbscan.labels_ == cid).nonzero()
+                supera_event.unassociated_edeps[int(cid)].resize(len(edep_index_v))
+                for idx in edep_index_v[0]:
+                    supera_event.unassociated_edeps[int(cid)].push_back(self._edeps_unassociated[int(idx)])
+
+        if verbose:
             print("--- Finising ReadEvent %s seconds ---" % (time.time() - read_event_start_time))
 
         return supera_event
