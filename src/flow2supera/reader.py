@@ -228,8 +228,8 @@ class InputReader:
         entry_mask = mask | (eid_val == -1)
         eid_val[entry_mask] = -1
 
-        if bad_entries:
-            raise ValueError("ERROR: Terminating due to multiple true event id association. Check simulation")
+        # if bad_entries:
+        #     raise ValueError("ERROR: Terminating due to multiple true event id association. Check simulation")
             
         return eid_val
         
