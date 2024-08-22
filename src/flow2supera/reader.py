@@ -43,6 +43,7 @@ class FlowReader:
         self._run_config = parser_run_config
         self._is_sim = False
         self._is_mpvmpr= False
+        self._has_light=False
         if config:
             if os.path.isfile(config):
                 file=config
@@ -97,10 +98,12 @@ class FlowReader:
             self._event_t0s = events['unix_ts'] + events['ts_start']/1e7 #ts_start is in ticks and 0.1 microseconds per tick for charge readout
             self._event_hit_indices = flow_manager[event_hit_indices_path]
             self._hits = flow_manager[calib_prompt_hits_path]
-            self._light_event_indices = flow_manager[charge_light_ref_path]
-            self._light_events = flow_manager[light_events_path]
-            self._flash_indices =  flow_manager[flash_light_ref_path]
-            self._flashes = flow_manager[flash_path]
+            self._is_sim = 'light' in fin.keys() and 'flash' in fin['light'].keys()
+            if self._has_light:
+                self._light_event_indices = flow_manager[charge_light_ref_path]
+                self._light_events = flow_manager[light_events_path]
+                self._flash_indices =  flow_manager[flash_light_ref_path]
+                self._flashes = flow_manager[flash_path]
             if self._is_sim:
                 self._segments = flow_manager[segments_path]
                 self._trajectories = flow_manager[trajectories_path]
@@ -184,27 +187,28 @@ class FlowReader:
         hit_start_index = self._event_hit_indices[result.event_id][0]
         hit_stop_index  = self._event_hit_indices[result.event_id][1]
         result.hits = self._hits[hit_start_index:hit_stop_index]
+
+        if self._light_present:
+            #Light association
+            event_flashes = []
+
+            #link the light events associated with the charge event
+            light_events_start = self._light_event_indices[result.event_id][0]
+            light_events_stop = self._light_event_indices[result.event_id][1]
+
+            result.light_events = self._light_events[light_events_start:light_events_stop]
+
+            #link the flashes associated with the light events
+            for lev in result.light_events:
+                flash_start = self._flash_indices[lev['id']][0]
+                flash_end = self._flash_indices[lev['id']][1]
+                event_flashes.extend(self._flashes[flash_start:flash_end])
+
+            result.flashes = []
     
-        #Light association
-        event_flashes = []
-
-        #link the light events associated with the charge event
-        light_events_start = self._light_event_indices[result.event_id][0]
-        light_events_stop = self._light_event_indices[result.event_id][1]
-
-        result.light_events = self._light_events[light_events_start:light_events_stop]
-
-        #link the flashes associated with the light events
-        for lev in result.light_events:
-            flash_start = self._flash_indices[lev['id']][0]
-            flash_end = self._flash_indices[lev['id']][1]
-            event_flashes.extend(self._flashes[flash_start:flash_end])
-
-        result.flashes = []
-
-        for flash in event_flashes:
-            supera_flash = self.GetFlash(flash, result.t0) #fix this with the actual light trigger time when the variable is added to flash
-            result.flashes.append(supera_flash)
+            for flash in event_flashes:
+                supera_flash = self.GetFlash(flash, result.t0) #fix this with the actual light trigger time when the variable is added to flash
+                result.flashes.append(supera_flash)
         
         if not self._is_sim:
             return result
@@ -240,8 +244,11 @@ class FlowReader:
         print('Event t0 {}'.format(input_event.t0))
         print('Event hit indices (start, stop):', input_event.hit_indices)
         print('Hits shape:', input_event.hits.shape)
-        print('Associated light events:', len(input_event.light_events))
-        print('Associated flashes:', len(input_event.flashes))
+
+        if self._light_present:
+            print('Associated light events:', len(input_event.light_events))
+            print('Associated flashes:', len(input_event.flashes))
+        
         if self._is_sim and len(input_event.hits) !=0:
             print('True event ID {}'.format(input_event.true_event_id))
             print('Backtracked hits len:', len(input_event.backtracked_hits))

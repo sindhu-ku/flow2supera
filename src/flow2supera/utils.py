@@ -5,7 +5,7 @@ import flow2supera
 import ROOT
 import yaml
 from yaml import Loader
-from edep2supera.utils import get_iomanager, larcv_meta, larcv_particle, larcv_neutrino
+from edep2supera.utils import get_iomanager, larcv_meta, larcv_particle, larcv_neutrino, larcv_flash
 from larcv import larcv
 
 def get_flow2supera(config_key):
@@ -147,13 +147,28 @@ def run_supera(out_file='larcv.root',
         driver.GenerateImageMeta(EventInput)
         meta   = larcv_meta(driver.Meta())
         tensor_packets = writer.get_data("sparse3d", "packets")
-        if not is_sim:
-            driver.Meta().edep2voxelset(EventInput.unassociated_edeps).fill_std_vectors(id_v, value_v)
-            larcv.as_event_sparse3d(tensor_packets, meta, id_v, value_v)
+        
         if is_sim:
             driver.Meta().edep2voxelset(driver._edeps_all).fill_std_vectors(id_v, value_v)
-            larcv.as_event_sparse3d(tensor_packets, meta, id_v, value_v)
+        else:
+            driver.Meta().edep2voxelset(EventInput.unassociated_edeps).fill_std_vectors(id_v, value_v)
+        
+        larcv.as_event_sparse3d(tensor_packets, meta, id_v, value_v)
+            
+         #Fill flashes
+        flash = writer.get_data("opflash", "light")
+        for fl in input_data.flashes:
+            larf = larcv_flash(fl)
+            flash.append(larf)
+                
+        if is_sim:
             driver.GenerateLabel(EventInput) 
+            
+            #Fill flashes
+            flash = writer.get_data("opflash", "light")
+            for fl in input_data.flashes:
+                larf = larcv_flash(fl)
+                flash.append(larf)
             # Start data store process
             result = driver.Label()
             tensor_energy = writer.get_data("sparse3d", "pcluster")
