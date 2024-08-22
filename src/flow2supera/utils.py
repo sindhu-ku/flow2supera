@@ -164,11 +164,6 @@ def run_supera(out_file='larcv.root',
         if is_sim:
             driver.GenerateLabel(EventInput) 
             
-            #Fill flashes
-            flash = writer.get_data("opflash", "light")
-            for fl in input_data.flashes:
-                larf = larcv_flash(fl)
-                flash.append(larf)
             # Start data store process
             result = driver.Label()
             tensor_energy = writer.get_data("sparse3d", "pcluster")
