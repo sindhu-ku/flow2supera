@@ -51,5 +51,5 @@ LabelConfig:
     EnergyDepositThreshold: 0.0
     RewriteInteractionID:  False
     #WorldBoundMax: [-1.e20,-1.e20,-1.e20]
-    #WorldBoundMin: [ 1.e20, 1.e20, 1.e20]drinkingkazu@sakura:~/sw/flow2supera$ 
+    #WorldBoundMin: [ 1.e20, 1.e20, 1.e20]
 
