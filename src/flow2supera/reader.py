@@ -109,7 +109,7 @@ class InputReader:
             self._event_t0s = events_data['unix_ts'] + events_data['ts_start']/1e7 
             self._event_hit_indices = flow_manager[event_hit_indices_path]
             self._hits = flow_manager[calib_prompt_hits_path]
-            self._is_sim = 'light' in fin.keys() and 'flash' in fin['light'].keys()
+            self._has_light = 'light' in fin.keys() and 'flash' in fin['light'].keys()
             if self._has_light:
                 self._light_event_indices = flow_manager[charge_light_ref_path]
                 self._light_events = flow_manager[light_events_path]
