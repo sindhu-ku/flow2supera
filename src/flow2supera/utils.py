@@ -7,6 +7,7 @@ import yaml
 from yaml import Loader
 from larcv import larcv
 from supera import supera
+import cppyy
 
 #from LarpixParser import event_parser as EventParser
 
@@ -129,7 +130,21 @@ def larcv_neutrino(n):
     larn.num_voxels          (int(n.num_voxels))
    
     return larn
+  
+def larcv_flash(f):
 
+    larf=larcv.Flash()
+
+    larf.id              (int(f.id))
+    larf.time            (f.time)
+    larf.timeWidth       (f.timeWidth)
+    larf.tpc             (f.tpc)
+    pe_vec = cppyy.gbl.std.vector('double')() #direct conversion of vector doesn't seem to work
+    for pe in (f.PEPerOpDet):
+        pe_vec.push_back(pe)
+    larf.PEPerOpDet      (pe_vec)
+
+    return larf
 
 def get_flow2supera(config_key):
 
@@ -279,18 +294,21 @@ def run_supera(out_file='larcv.root',
             log_supera_integrity_check(EventInput, driver, logger, verbose=False)
             
         meta   = larcv_meta(driver.Meta())
+
         tensor_hits = writer.get_data("sparse3d", "hits")
         
-        if not is_sim:
+        if is_sim:
+            driver.Meta().edep2voxelset(driver._edeps_all).fill_std_vectors(id_v, value_v)
+        else:
             driver.Meta().edep2voxelset(EventInput.unassociated_edeps).fill_std_vectors(id_v, value_v)
-            larcv.as_event_sparse3d(tensor_hits, meta, id_v, value_v)
-      
+            
+        larcv.as_event_sparse3d(tensor_hits, meta, id_v, value_v)
+        
         if is_sim:            
             if input_data.trajectories is None:
                 print(f'[SuperaDriver] WARNING skipping this entry {entry} as it appears to be "empty" (no truth association found, non-unique event id, etc.)')
                 continue
             driver.Meta().edep2voxelset(driver._edeps_all).fill_std_vectors(id_v, value_v)
-            larcv.as_event_sparse3d(tensor_hits, meta, id_v, value_v)
             driver.GenerateLabel(EventInput) 
             time_generate = time.time() - t2
             print("--- label creation  {:.2e} seconds ---".format(time_generate))
@@ -338,7 +356,13 @@ def run_supera(out_file='larcv.root',
             
             time_store = time.time() - t3
             print("--- storing output  {:.2e} seconds ---".format(time_store))
-
+        
+        #Fill flashes
+        flash = writer.get_data("opflash", "light")
+        for fl in input_data.flashes:
+            larf = larcv_flash(fl)
+            flash.append(larf)
+            
         #propagating trigger info
         trigger = writer.get_data("trigger", "base")
         trigger.id(int(input_data.event_id))  # fixme: this will need to be different for real data?
