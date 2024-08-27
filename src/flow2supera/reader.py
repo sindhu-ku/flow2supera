@@ -278,7 +278,7 @@ class InputReader:
         hidx_min, hidx_max = self._event_hit_indices[entry]
         result.hits = self._hits[hidx_min:hidx_max]
         
-        if self._light_present:
+        if self._has_light:
             #Light association
             event_flashes = []
 
@@ -337,7 +337,7 @@ class InputReader:
         print('Event hit indices (start, stop):', input_event.hit_indices)
         print('Hits shape:', input_event.hits.shape)
 
-        if self._light_present:
+        if self._has_light:
             print('Associated light events:', len(input_event.light_events))
             print('Associated flashes:', len(input_event.flashes))
         
