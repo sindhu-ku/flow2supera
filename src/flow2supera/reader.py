@@ -142,7 +142,7 @@ class InputReader:
 
         supera_neutrino = supera.Neutrino()
         if isinstance(ixn,np.void):
-            return nu_result
+            return supera_neutrino
         
         supera_neutrino.id = int(ixn_idx)
         supera_neutrino.interaction_id = int(ixn['vertex_id']) 
