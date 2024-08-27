@@ -1,5 +1,5 @@
 import time
-import edep2supera
+from supera import supera
 from ROOT import supera, std, TG4TrajectoryPoint
 import numpy as np
 import LarpixParser
@@ -44,7 +44,7 @@ class ID2Index:
         self._map[traj_id - self._offset] = value
 
 
-class SuperaDriver(edep2supera.edep2supera.SuperaDriver):
+class SuperaDriver:
 
     LOG_KEYS = ('ass_saturation', # number of packets where the association array is full (target 0)
         'residual_q',             # anaccounted energy summed over all packets (target 0)
@@ -66,8 +66,8 @@ class SuperaDriver(edep2supera.edep2supera.SuperaDriver):
         )
 
     def __init__(self):
-        super().__init__()
-        # self._geom_dict  = None
+        self._core_driver=supera.Driver()
+        self._geom_dict  = None
         self._run_config = None
         self._trackid2idx = ID2Index()
         self._segid2idx = ID2Index()
@@ -87,6 +87,17 @@ class SuperaDriver(edep2supera.edep2supera.SuperaDriver):
         self._dbscan_dist = 0.4435 * 1.99
         self._dbscan=DBSCAN(eps=self._dbscan_dist,min_samples=1,n_jobs=-1)
 
+        #
+        # supera::Driver class objects
+        # Q: why not simply let this class inherit from supera::Driver?
+        # A: overriding the same-named functions (e.g. ConfigureFromText) seems to
+        #    cause RecursionError when calling the base class function with super()
+        self.Reset = self._core_driver.Reset
+        self.Generate = self._core_driver.Generate
+        self.GenerateImageMeta = self._core_driver.GenerateImageMeta
+        self.GenerateLabel = self._core_driver.GenerateLabel
+        self.Label = self._core_driver.Label
+        self.Meta  = self._core_driver.Meta
 
         print("Initialized SuperaDriver class")
 
@@ -143,12 +154,13 @@ class SuperaDriver(edep2supera.edep2supera.SuperaDriver):
     def ConfigureFromFile(self,fname):
         cfg_txt = open(fname,'r').read()
         self.ConfigureFromText(cfg_txt)
-        super().ConfigureFromFile(fname)
 
 
     def ConfigureFromText(self,txt):
-
-        cfg=yaml.load(txt, Loader=Loader)
+        self._core_driver.ConfigureFromText(txt)
+        print('Configured base supera')
+        print(txt)
+        cfg=yaml.safe_load(txt)
 
         if not self.LoadPropertyConfigs(cfg):
             raise ValueError('Failed to configure flow2supera!')
@@ -171,8 +183,9 @@ class SuperaDriver(edep2supera.edep2supera.SuperaDriver):
             self._dbscan_dist = cfg.get('DBSCANDist',
                 self._dbscan_dist)
             self._dbscan=DBSCAN(eps=self._dbscan_dist,min_samples=1,n_jobs=-1)
+        
 
-        super().ConfigureFromText(txt)
+        print('Configuring done')
 
     def ReadEvent(self, data, is_sim=True,verbose=False):
 

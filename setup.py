@@ -8,7 +8,7 @@ with io.open(os.path.join(this_directory, 'README.md'), encoding='utf-8') as f:
 
 setup(
     name="flow2supera",
-    version="0.0.1",
+    version="4.0.0",
     include_package_data=True,
     author=['Kazuhiro Terao, Zach Hulcher, Andrew Mogan, Sindhujha Kumaran'],
     author_email='kterao@slac.stanford.edu, zhulcher@slac.stanford.edu, andrew.mogan@colostate.edu, s.kumaran@uci.edu',
@@ -27,7 +27,7 @@ setup(
         'numpy',
         #'scikit-build',
         'supera',
-        'edep2supera',
+        #'edep2supera',
         'h5flow',
     ],
     long_description=long_description,
