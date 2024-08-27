@@ -184,15 +184,9 @@ def run_supera(out_file='larcv.root',
             driver.Meta().edep2voxelset(driver._edeps_all).fill_std_vectors(id_v, value_v)
         else:
             driver.Meta().edep2voxelset(EventInput.unassociated_edeps).fill_std_vectors(id_v, value_v)
-        
+            
         larcv.as_event_sparse3d(tensor_hits, meta, id_v, value_v)
         
-        #Fill flashes
-        flash = writer.get_data("opflash", "light")
-        for fl in input_data.flashes:
-            larf = larcv_flash(fl)
-            flash.append(larf)
-
         if is_sim:            
             if input_data.trajectories is None:
                 print(f'[SuperaDriver] WARNING skipping this entry {entry} as it appears to be "empty" (no truth association found, non-unique event id, etc.)')
@@ -245,7 +239,13 @@ def run_supera(out_file='larcv.root',
             
             time_store = time.time() - t3
             print("--- storing output  {:.2e} seconds ---".format(time_store))
-
+        
+        #Fill flashes
+        flash = writer.get_data("opflash", "light")
+        for fl in input_data.flashes:
+            larf = larcv_flash(fl)
+            flash.append(larf)
+            
         #propagating trigger info
         trigger = writer.get_data("trigger", "base")
         trigger.id(int(input_data.event_id))  # fixme: this will need to be different for real data?
