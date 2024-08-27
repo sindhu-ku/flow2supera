@@ -135,7 +135,7 @@ def larcv_flash(f):
 
     larf=larcv.Flash()
 
-    larf.id              (int(f.id))
+    larf.id              (int(f.flash_id))
     larf.time            (f.time)
     larf.timeWidth       (f.timeWidth)
     larf.tpc             (f.tpc)

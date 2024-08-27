@@ -26,6 +26,12 @@ class InputEvent:
     flashes = []
     light_events = None
 
+class Flash:
+    flash_id = -1
+    time = 0.0
+    timeWidth = 0.0
+    PEPerOpDet = []
+    tpc = -1
 
 class InputReader:
     
@@ -170,14 +176,14 @@ class InputReader:
     
     def GetFlash(self, flash, t0):
 
-        supera_flash = supera.Flash()
-        supera_flash.id = int(flash['id'])
-        supera_flash.time = flash['hit_time_range'][0]*1e-9 + t0
-        supera_flash.timeWidth = (flash['hit_time_range'][1] - flash['hit_time_range'][0])*1e-9
-        supera_flash.PEPerOpDet = np.array(flash['deconv_sum']).flatten() #*0.022857 #adc charge to pe conversion
-        supera_flash.tpc = int(flash['tpc'])
+        flash_result = Flash()
+        flash_result.flash_id = int(flash['id'])
+        flash_result.time = flash['hit_time_range'][0]*1e-9 + t0
+        flash_result.timeWidth = (flash['hit_time_range'][1] - flash['hit_time_range'][0])*1e-9
+        flash_result.PEPerOpDet = np.array(flash['deconv_sum']).flatten()#*0.022857 #adc charge to pe conversion
+        flash_result.tpc = int(flash['tpc'])
 
-        return supera_flash
+        return flash_result
     
     # To truth associations go as hits -> segments -> trajectories
 
@@ -297,8 +303,9 @@ class InputReader:
             result.flashes = []
     
             for flash in event_flashes:
-                supera_flash = self.GetFlash(flash, result.t0) #fix this with the actual light trigger time when the variable is added to flash
-                result.flashes.append(supera_flash)
+                flash_result = self.GetFlash(flash, result.t0) #fix this with the actual light trigger time when the variable is added to flash
+                result.flashes.append(flash_result)
+                
         if not self._is_sim:
             return result
         
