@@ -5,12 +5,12 @@
 LogLevel:        INFO
 EventSeparator:  'spillID'
 ActiveDetectors: ["TPCActive_shape"]
-MaxSegmentSize:  0.03
-PropertyKeyword: '2x2'
+ParserConfigKeyword: '2x2'
 TileLayout: ''
 DetectorProperties: ''
-ParserRunConfig:
-    event_separator: 'eventID'
+SimConfigKeyword: '2x2'
+#ParserRunConfig:
+#    event_separator: 'eventID'
 ElectronEnergyThreshold: 5
 Type: ['data', '']
 
