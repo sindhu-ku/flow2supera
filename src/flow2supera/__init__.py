@@ -1,3 +1,2 @@
-import edep2supera
-#import utils,config
+from supera import supera
 from . import utils, config, driver, reader, pdg2mass

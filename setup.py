@@ -27,7 +27,7 @@ setup(
         'numpy',
         #'scikit-build',
         'supera',
-        'edep2supera',
+        #'edep2supera',
         'h5flow',
     ],
     long_description=long_description,

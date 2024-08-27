@@ -7,7 +7,8 @@ import flow2supera
 import argparse
 import ROOT
 from larcv import larcv
-from edep2supera.utils import get_iomanager, larcv_meta, larcv_particle, larcv_neutrino
+from supera import supera
+supera.EDep
 
 #from LarpixParser import event_parser as EventParser
 from larcv import larcv
@@ -30,6 +31,107 @@ IOManager: {
     o.initialize()
     f.close()
     return o
+
+
+def larcv_meta(supera_meta):
+    larcv_meta = larcv.Voxel3DMeta()
+
+    larcv_meta.set(supera_meta.min_x(),supera_meta.min_y(),supera_meta.min_z(),
+                   supera_meta.max_x(),supera_meta.max_y(),supera_meta.max_z(),
+                   supera_meta.num_voxel_x(),supera_meta.num_voxel_y(),supera_meta.num_voxel_z())
+    
+    return larcv_meta
+
+def larcv_particle(p):
+    
+    US2NS = 1.e3
+
+    larp=larcv.Particle()
+    
+    larp.id              (p.part.id)
+    larp.shape           (int(p.part.shape))
+    
+    # particle's info setter
+    larp.track_id         (p.part.trackid)
+    if hasattr(p.part, "genid") and hasattr(larp, "gen_id"):
+        larp.gen_id(p.part.genid)
+        
+    larp.pdg_code         (p.part.pdg)
+    larp.momentum         (p.part.px,p.part.py,p.part.pz)
+    larp.end_momentum     (p.part.end_px,p.part.end_py,p.part.end_pz)
+    larp.distance_travel  (p.part.dist_travel)
+    
+    vtx_dict = dict(position = p.part.vtx, 
+                    end_position = p.part.end_pt, 
+                    first_step = p.part.first_step, 
+                    last_step = p.part.last_step,
+                    parent_position = p.part.parent_vtx,
+                    ancestor_position = p.part.ancestor_vtx,
+                   )
+    for key,item in vtx_dict.items():
+        getattr(larp,key)(item.pos.x, item.pos.y, item.pos.z, item.time * US2NS)
+    
+    #larp.distance_travel ( double dist ) { _dist_travel = dist; }
+    larp.energy_init      (p.part.energy_init)
+    larp.energy_deposit   (p.energy.sum())
+    larp.creation_process (p.part.process)
+    larp.num_voxels       (p.energy.size())
+    
+    # parent info setter
+    larp.parent_track_id (p.part.parent_trackid)
+    larp.parent_pdg_code (p.part.parent_pdg)
+    larp.parent_creation_process(p.part.parent_process)
+    larp.parent_id       (p.part.parent_id)
+    for cid in p.part.children_id:
+        larp.children_id(cid)
+
+    # ancestor info setter
+    larp.ancestor_track_id (p.part.ancestor_id)
+    larp.ancestor_pdg_code (p.part.ancestor_pdg)
+    larp.ancestor_creation_process(p.part.ancestor_process)
+                                   
+    if not p.part.group_id == supera.kINVALID_INSTANCEID: 
+        larp.group_id(p.part.group_id)
+        
+    if not p.part.interaction_id == supera.kINVALID_INSTANCEID:
+        larp.interaction_id(p.part.interaction_id)
+    
+    return larp
+
+def larcv_neutrino(n):
+    
+    larn = larcv.Neutrino()
+    US2NS = 1.e3
+        
+    larn.id                 (larcv.InstanceID_t(n.id)) 
+    larn.interaction_id     (larcv.InstanceID_t(n.interaction_id))
+    larn.nu_track_id        (supera.CUInt_t(n.nu_track_id))
+    larn.lepton_track_id    (supera.CUInt_t(n.lepton_track_id))
+    larn.current_type        (n.current_type)
+    larn.interaction_mode    (n.interaction_mode)
+    larn.interaction_type    (n.interaction_type)
+    larn.target              (n.target)   
+    larn.nucleon             (n.nucleon)
+    larn.quark               (n.quark)
+    larn.hadronic_invariant_mass(n.hadronic_invariant_mass)
+    larn.bjorken_x              (n.bjorken_x)
+    larn.inelasticity           (n.inelasticity)
+    larn.momentum_transfer      (n.momentum_transfer)
+    larn.momentum_transfer_mag  (n.momentum_transfer_mag)
+    larn.energy_transfer        (n.energy_transfer)
+    larn.theta               (n.theta)
+    larn.pdg_code            (int(n.pdg_code))
+    larn.lepton_pdg_code     (int(n.lepton_pdg_code))
+    larn.momentum            (n.px, n.py, n.pz)
+    larn.lepton_p            (n.lepton_p)
+    larn.position            (n.vtx.pos.x, n.vtx.pos.y, n.vtx.pos.z, n.vtx.time * US2NS)
+    larn.distance_travel     (n.dist_travel)
+    larn.energy_init         (n.energy_init)
+    larn.energy_deposit      (n.energy_deposit)
+    larn.creation_process    (n.creation_process)
+    larn.num_voxels          (int(n.num_voxels))
+   
+    return larn
 
 
 def get_flow2supera(config_key):
