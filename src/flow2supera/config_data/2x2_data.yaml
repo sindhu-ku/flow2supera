@@ -2,19 +2,17 @@
 # 2x2.yaml
 # ===============
 
-LogLevel:        WARNING
+LogLevel:        INFO
 EventSeparator:  'spillID'
 ActiveDetectors: ["TPCActive_shape"]
 ParserConfigKeyword: '2x2'
-SimConfigKeyword:    '2x2_mpvmpr'
 TileLayout: ''
 DetectorProperties: ''
+SimConfigKeyword: '2x2'
 #ParserRunConfig:
 #    event_separator: 'eventID'
 ElectronEnergyThreshold: 5
-Type: ['sim', 'mpvmpr']
-ClusterSizeLimit: 5
-DBSCANDist: 0.882366 # 1.99 * 0.4434
+Type: ['data', '']
 
 BBoxAlgorithm: BBoxInteraction
 BBoxConfig:
@@ -44,15 +42,13 @@ BBoxConfig:
 LabelAlgorithm: LArTPCMLReco3D
 LabelConfig:
     LogLevel: WARNING
-    DeltaSize:    10
+    DeltaSize:     3
     ComptonSize:  10
-    LEScatterSize: 5
+    LEScatterSize: 2
     TouchDistance: 1
     StoreLEScatter:   True
     SemanticPriority: [1,0,2,3,4]
     EnergyDepositThreshold: 0.0
-    AssChargeLimit: 0.09
-    AssFractionLimit: 0.1
     RewriteInteractionID:  False
     #WorldBoundMax: [-1.e20,-1.e20,-1.e20]
     #WorldBoundMin: [ 1.e20, 1.e20, 1.e20]

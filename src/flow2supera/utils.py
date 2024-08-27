@@ -1,17 +1,14 @@
-import sys, os
-import h5py
-import h5flow
+import os
 import numpy as np
 import time
 import flow2supera
-import argparse
 import ROOT
+import yaml
+from yaml import Loader
 from larcv import larcv
 from supera import supera
-supera.EDep
 
 #from LarpixParser import event_parser as EventParser
-from larcv import larcv
 
 def get_iomanager(outname):
     import tempfile
@@ -203,9 +200,11 @@ def run_supera(out_file='larcv.root',
                config_key='',
                num_events=-1,
                num_skip=0,
-               ignore_bad_association=True,
-               save_log=None):
+            #    ignore_bad_association=True,
+               save_log=None,
+               verbose=False):
 
+    is_sim = False
     start_time = time.time()
 
     writer = get_iomanager(out_file)
@@ -213,6 +212,15 @@ def run_supera(out_file='larcv.root',
     driver = get_flow2supera(config_key)
 
     reader = flow2supera.reader.InputReader(driver.parser_run_config(), in_file,config_key)
+    if config_key:
+        if os.path.isfile(config_key):
+            file=config_key
+        else:
+            file=flow2supera.config.get_config(config_key)
+        with open(file,'r') as f:
+            cfg=yaml.load(f.read(),Loader=Loader)
+            if 'Type' in cfg.keys():
+                is_sim=cfg.get('Type')[0]=='sim'
 
     id_vv = ROOT.std.vector("std::vector<unsigned long>")()
     value_vv = ROOT.std.vector("std::vector<float>")()
@@ -236,6 +244,7 @@ def run_supera(out_file='larcv.root',
             logger[key]=[]
         driver.log(logger)
     
+    print("importing",cfg.get('Type'))
 
     print("----------------Processing charge events----------------")
     for entry in range(len(reader)):
@@ -252,80 +261,84 @@ def run_supera(out_file='larcv.root',
 
         t0 = time.time()
         input_data = reader.GetEntry(entry)
-
-        if input_data.trajectories is None:
-            print(f'[SuperaDriver] WARNING skipping this entry {entry} as it appears to be "empty" (no truth association found, non-unique event id, etc.)')
-            continue
-
         reader.EventDump(input_data)
-
-        #is_good_event = reader.CheckIntegrity(input_data, ignore_bad_association)
-        #if not is_good_event:
-        #    print('[ERROR] Entry', entry, 'is not valid; skipping')
-        #    continue
+   
         time_read = time.time() - t0
         print("--- reading input   {:.2e} seconds ---".format(time_read))
-        
+
         t1 = time.time()
         EventInput = driver.ReadEvent(input_data)
         time_convert = time.time() - t1
         print("--- data conversion {:.2e} seconds ---".format(time_convert))
-
+      
         t2 = time.time()
         driver.GenerateImageMeta(EventInput)
-        driver.GenerateLabel(EventInput) 
-        time_generate = time.time() - t2
-        print("--- label creation  {:.2e} seconds ---".format(time_generate))
 
         # Perform an integrity check
         if save_log:
             log_supera_integrity_check(EventInput, driver, logger, verbose=False)
-
-        # Start data store process
-        t3 = time.time()
-        result = driver.Label()
-        meta   = larcv_meta(driver.Meta())
-        
-        tensor_energy = writer.get_data("sparse3d", "pcluster")
-        result.FillTensorEnergy(id_v, value_v)
-        larcv.as_event_sparse3d(tensor_energy, meta, id_v, value_v)
-        
-        tensor_hits = writer.get_data("sparse3d", "hits")
-        driver.Meta().edep2voxelset(driver._edeps_all).fill_std_vectors(id_v, value_v)
-        larcv.as_event_sparse3d(tensor_hits, meta, id_v, value_v)
-
-        # Check the input image and label image match in the voxel set
-        ids_input = np.array([v.id() for v in tensor_energy.as_vector()])
-        ids_label = np.array([v.id() for v in tensor_hits.as_vector()])
-        assert np.allclose(ids_input,ids_label), '[SuperaDriver] ERROR: the label and input data has different set of voxels'
-
-        tensor_semantic = writer.get_data("sparse3d", "pcluster_semantics")
-        result.FillTensorSemantic(id_v, value_v)
-        larcv.as_event_sparse3d(tensor_semantic,meta, id_v, value_v)
-
-        cluster_energy = writer.get_data("cluster3d", "pcluster")
-        result.FillClustersEnergy(id_vv, value_vv)
-        larcv.as_event_cluster3d(cluster_energy, meta, id_vv, value_vv)
-
-        cluster_dedx = writer.get_data("cluster3d", "pcluster_dedx")
-        result.FillClustersdEdX(id_vv, value_vv)
-        larcv.as_event_cluster3d(cluster_dedx, meta, id_vv, value_vv)
-
-        particle = writer.get_data("particle", "pcluster")
-        for p in result._particles:
-            if not p.valid:
-                continue
-            larp = larcv_particle(p)
-            particle.append(larp)
-
-        #Fill mc truth neutrino interactions
-        interaction = writer.get_data("neutrino", "mc_truth")
-        for ixn in input_data.interactions:
-            if isinstance(ixn,np.void):
-                continue
-            larn = larcv_neutrino(ixn)
-            interaction.append(larn)
             
+        meta   = larcv_meta(driver.Meta())
+        tensor_hits = writer.get_data("sparse3d", "hits")
+        
+        if not is_sim:
+            driver.Meta().edep2voxelset(EventInput.unassociated_edeps).fill_std_vectors(id_v, value_v)
+            larcv.as_event_sparse3d(tensor_hits, meta, id_v, value_v)
+      
+        if is_sim:            
+            if input_data.trajectories is None:
+                print(f'[SuperaDriver] WARNING skipping this entry {entry} as it appears to be "empty" (no truth association found, non-unique event id, etc.)')
+                continue
+            driver.Meta().edep2voxelset(driver._edeps_all).fill_std_vectors(id_v, value_v)
+            larcv.as_event_sparse3d(tensor_hits, meta, id_v, value_v)
+            driver.GenerateLabel(EventInput) 
+            time_generate = time.time() - t2
+            print("--- label creation  {:.2e} seconds ---".format(time_generate))
+
+            # Start data store process
+            t3 = time.time()
+
+            result = driver.Label()
+            tensor_energy = writer.get_data("sparse3d", "pcluster")
+            result.FillTensorEnergy(id_v, value_v)
+            larcv.as_event_sparse3d(tensor_energy, meta, id_v, value_v)
+            
+            # Check the input image and label image match in the voxel set
+            ids_input = np.array([v.id() for v in tensor_energy.as_vector()])
+            ids_label = np.array([v.id() for v in tensor_hits.as_vector()])
+ 
+            assert np.allclose(ids_input,ids_label), '[SuperaDriver] ERROR: the label and input data has different set of voxels'
+
+            tensor_semantic = writer.get_data("sparse3d", "pcluster_semantics")
+            result.FillTensorSemantic(id_v, value_v)
+            larcv.as_event_sparse3d(tensor_semantic,meta, id_v, value_v)
+
+            cluster_energy = writer.get_data("cluster3d", "pcluster")
+            result.FillClustersEnergy(id_vv, value_vv)
+            larcv.as_event_cluster3d(cluster_energy, meta, id_vv, value_vv)
+
+            cluster_dedx = writer.get_data("cluster3d", "pcluster_dedx")
+            result.FillClustersdEdX(id_vv, value_vv)
+            larcv.as_event_cluster3d(cluster_dedx, meta, id_vv, value_vv)
+
+            particle = writer.get_data("particle", "pcluster")
+            for p in result._particles:
+                if not p.valid:
+                    continue
+                larp = larcv_particle(p)
+                particle.append(larp)
+            
+            #Fill mc truth neutrino interactions
+            interaction = writer.get_data("neutrino", "mc_truth")
+            for ixn in input_data.interactions:
+                if isinstance(ixn,np.void):
+                    continue
+                larn = larcv_neutrino(ixn)
+                interaction.append(larn)
+            
+            time_store = time.time() - t3
+            print("--- storing output  {:.2e} seconds ---".format(time_store))
+
         #propagating trigger info
         trigger = writer.get_data("trigger", "base")
         trigger.id(int(input_data.event_id))  # fixme: this will need to be different for real data?
@@ -335,23 +348,10 @@ def run_supera(out_file='larcv.root',
         # TODO fill the run ID 
         writer.set_id(0, 0, int(input_data.event_id))
         writer.save_entry()
-        time_store = time.time() - t3
-        print("--- storing output  {:.2e} seconds ---".format(time_store))
 
         time_event = time.time() - t0
         print("--- driver total    {:.2e} seconds ---".format(time_event))
 
-        if save_log:
-            logger['event_id'].append(input_data.event_id)
-            logger['time_read'    ].append(time_read)
-            logger['time_convert' ].append(time_convert)
-            logger['time_generate'].append(time_generate)
-            logger['time_store'   ].append(time_store)
-            logger['time_event'   ].append(time_event)
-    
-   
-
-    
     writer.finalize()
 
     

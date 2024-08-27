@@ -2,17 +2,17 @@
 # 2x2.yaml
 # ===============
 
-LogLevel:        WARNING
+LogLevel:        INFO
 EventSeparator:  'spillID'
 ActiveDetectors: ["TPCActive_shape"]
 ParserConfigKeyword: '2x2'
-SimConfigKeyword:    '2x2_mod2mod_variation_mpvmpr'
 TileLayout: ''
 DetectorProperties: ''
+SimConfigKeyword: '2x2'
 #ParserRunConfig:
 #    event_separator: 'eventID'
 ElectronEnergyThreshold: 5
-SimulationType: 'neutrino'
+Type: ['sim', 'neutrino']
 
 BBoxAlgorithm: BBoxInteraction
 BBoxConfig:
@@ -49,6 +49,7 @@ LabelConfig:
     StoreLEScatter:   True
     SemanticPriority: [1,0,2,3,4]
     EnergyDepositThreshold: 0.0
+    RewriteInteractionID:  False
     #WorldBoundMax: [-1.e20,-1.e20,-1.e20]
     #WorldBoundMin: [ 1.e20, 1.e20, 1.e20]drinkingkazu@sakura:~/sw/flow2supera$ 
 

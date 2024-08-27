@@ -1,4 +1,3 @@
-
 import time
 from supera import supera
 from ROOT import supera, std, TG4TrajectoryPoint
@@ -7,7 +6,7 @@ import LarpixParser
 import yaml
 from yaml import Loader
 from sklearn.cluster import DBSCAN
-
+from larndsim.consts import detector
 
 class ID2Index:
 
@@ -139,10 +138,11 @@ class SuperaDriver:
                     return False
         else:
             raise RuntimeError('Must contain "PropertyKeyword". Currently other run modes not supported.')
-
+            
         # Event separator default value needs to be set.
         # We repurpose "run_config" of EventParser to hold this attribute.
         self._run_config['event_separator'] = 'eventID'
+        
         # Apply run config modification if requested
         run_config_mod = cfg_dict.get('ParserRunConfig',None)
         if run_config_mod:
@@ -187,9 +187,8 @@ class SuperaDriver:
 
         print('Configuring done')
 
+    def ReadEvent(self, data, is_sim=True,verbose=False):
 
-    def ReadEvent(self, data, verbose=False):
-        
         start_time = time.time()
         read_event_start_time = start_time
 
@@ -198,12 +197,27 @@ class SuperaDriver:
             for key in self.LOG_KEYS:
                 self._log[key].append(0)
         supera_event = supera.EventInput()
-
-        assert data.trajectories is not None, '[SuperaDriver] ERROR data.trajectories is None'
+        
+        if not is_sim:
+            hits = data.hits
+            for i_ht, hit in enumerate(hits):
+                edep = supera.EDep()
+                edep.x = hit['x']
+                edep.y = hit['y']
+                edep.z = hit['z']
+                edep.t = hit['t_drift']
+                edep.e = hit['E']
+                supera_event.unassociated_edeps.push_back(edep)
+            return supera_event
+    
+        if data.trajectories is None:
+            print('[SuperaDriver] WARNING data.trajectories is None')
+            return supera_event
 
         supera_event.reserve(len(data.trajectories))
 
         # Assuming your segment IDs are in a dataset named 'segment_ids'
+   
         segment_ids = data.segments['segment_id']  # Load the segment IDs into a NumPy array
         self._segid2idx.reset(segment_ids)
 
@@ -534,9 +548,8 @@ class SuperaDriver:
         # Larnd-sim stores a lot of these fields as numpy.uint32, 
         # but Supera/LArCV want a regular int, hence the type casting
         p.interaction_id = int(trajectory['vertex_id'])
-        p.trackid        = int(trajectory['traj_id']) # Unique among all files used in truth-matching for MLreco
-        if hasattr(p, "genid") and trajectory["parent_id"] < 0:# < 0 indicates a top-level particle (from GENIE)
-            p.genid = int(trajectory['traj_id'])
+        p.trackid        = int(trajectory['traj_id']) 
+        p.genid = int(trajectory['traj_id'])
         p.pdg            = int(trajectory['pdg_id'])
         p.px = trajectory['pxyz_start'][0]
         p.py = trajectory['pxyz_start'][1]
@@ -753,7 +766,6 @@ class SuperaDriver:
 
     def associated_along_drift(self, seg, packet_pt, raise_error=True, verbose=False):
 
-        from larndsim.consts import detector
         # project on 2D, find the closest point on YZ plane 
         a = np.array([seg['x_start'],seg['y_start'],seg['z_start']],dtype=float)
         b = np.array([seg['x_end'],seg['y_end'],seg['z_end']],dtype=float)
