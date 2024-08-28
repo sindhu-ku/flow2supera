@@ -1,14 +1,16 @@
 import h5py 
 import h5flow
 import numpy as np
-from ROOT import supera
 from yaml import Loader
 import yaml
 import os
 import flow2supera
 import time
 import tqdm
+import sys
 
+FLOAT_MAX = sys.float_info.max
+INT_MAX = (1 << 31) - 1
 
 class InputEvent:
     event_id = -1
@@ -28,11 +30,36 @@ class InputEvent:
 
 class Flash:
     flash_id = -1
-    time = 0.0
-    timeWidth = 0.0
+    time = FLOAT_MAX
+    timeWidth = FLOAT_MAX
     PEPerOpDet = []
     tpc = -1
 
+class Neutrino:
+    idx = INT_MAX
+    interaction_id = INT_MAX
+    target = INT_MAX
+    x = FLOAT_MAX
+    y = FLOAT_MAX
+    z = FLOAT_MAX
+    time = FLOAT_MAX
+    pdg_code =  INT_MAX
+    lepton_pdg_code = INT_MAX
+    energy_init = FLOAT_MAX
+    theta = FLOAT_MAX
+    momentum_transfer =  FLOAT_MAX
+    momentum_transfer_mag =  FLOAT_MAX
+    energy_transfer =  FLOAT_MAX
+    bjorken_x = FLOAT_MAX
+    inelasticity = FLOAT_MAX
+    px = FLOAT_MAX
+    py = FLOAT_MAX
+    pz = FLOAT_MAX
+    lepton_p = FLOAT_MAX
+    current_type = -1
+    interaction_mode = -1
+    interaction_type = -1
+    
 class InputReader:
     
     def __init__(self, parser_run_config, input_files=None,config=None):
@@ -146,33 +173,36 @@ class InputReader:
     
     def GetNeutrinoIxn(self, ixn, ixn_idx):
 
-        supera_neutrino = supera.Neutrino()
+        interaction = Neutrino()
         if isinstance(ixn,np.void):
-            return supera_neutrino
+            return interaction
         
-        supera_neutrino.id = int(ixn_idx)
-        supera_neutrino.interaction_id = int(ixn['vertex_id']) 
-        supera_neutrino.target = int(ixn['target'])
-        supera_neutrino.vtx = supera.Vertex(ixn['x_vert'], ixn['y_vert'], ixn['z_vert'], ixn['t_vert'])
-        supera_neutrino.pdg_code = int(ixn['nu_pdg'])
-        supera_neutrino.lepton_pdg_code = int(ixn['lep_pdg'])  
-        supera_neutrino.energy_init = ixn['Enu']
-        supera_neutrino.theta = ixn['lep_ang']
-        supera_neutrino.momentum_transfer =  ixn['Q2']
-        supera_neutrino.momentum_transfer_mag =  ixn['q3']
-        supera_neutrino.energy_transfer =  ixn['q0']
-        supera_neutrino.bjorken_x = ixn['x']
-        supera_neutrino.inelasticity = ixn['y']
-        supera_neutrino.px = ixn['nu_4mom'][0]
-        supera_neutrino.py = ixn['nu_4mom'][1]       
-        supera_neutrino.pz = ixn['nu_4mom'][2]
-        supera_neutrino.lepton_p = ixn['lep_mom']
-        if(ixn['isCC']): supera_neutrino.current_type = 0
-        else: supera_neutrino.current_type = 1
-        supera_neutrino.interaction_mode = int(ixn['reaction'])
-        supera_neutrino.interaction_type = int(ixn['reaction'])   
+        interaction.idx = int(ixn_idx)
+        interaction.interaction_id = int(ixn['vertex_id']) 
+        interaction.target = int(ixn['target'])
+        interaction.x = ixn['x_vert']
+        interaction.y = ixn['y_vert']
+        interaction.z = ixn['z_vert']
+        interaction.time = ixn['t_vert']
+        interaction.pdg_code = int(ixn['nu_pdg'])
+        interaction.lepton_pdg_code = int(ixn['lep_pdg'])  
+        interaction.energy_init = ixn['Enu']
+        interaction.theta = ixn['lep_ang']
+        interaction.momentum_transfer =  ixn['Q2']
+        interaction.momentum_transfer_mag =  ixn['q3']
+        interaction.energy_transfer =  ixn['q0']
+        interaction.bjorken_x = ixn['x']
+        interaction.inelasticity = ixn['y']
+        interaction.px = ixn['nu_4mom'][0]
+        interaction.py = ixn['nu_4mom'][1]       
+        interaction.pz = ixn['nu_4mom'][2]
+        interaction.lepton_p = ixn['lep_mom']
+        if(ixn['isCC']): interaction.current_type = 0
+        else: interaction.current_type = 1
+        interaction.interaction_mode = int(ixn['reaction'])
+        interaction.interaction_type = int(ixn['reaction'])   
         
-        return supera_neutrino  
+        return interaction  
     
     def GetFlash(self, flash, t0):
 
@@ -330,8 +360,8 @@ class InputReader:
         interactions_array  = np.array(self._interactions)
         event_interactions = interactions_array[interactions_array['event_id'] == result.true_event_id]
         for ixn_idx, ixn in enumerate(event_interactions):
-            supera_nu = self.GetNeutrinoIxn(ixn, ixn_idx)
-            result.interactions.append(supera_nu)  
+            interaction = self.GetNeutrinoIxn(ixn, ixn_idx)
+            result.interactions.append(interaction)  
         
         print('SuperaInput filled',time.time()-t0,'[s]')
         return result 
