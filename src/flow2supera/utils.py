@@ -7,6 +7,7 @@ import yaml
 from yaml import Loader
 from larcv import larcv
 from supera import supera
+import cppyy
 
 #from LarpixParser import event_parser as EventParser
 
@@ -100,17 +101,12 @@ def larcv_neutrino(n):
     larn = larcv.Neutrino()
     US2NS = 1.e3
         
-    larn.id                 (larcv.InstanceID_t(n.id)) 
-    larn.interaction_id     (larcv.InstanceID_t(n.interaction_id))
-    larn.nu_track_id        (supera.CUInt_t(n.nu_track_id))
-    larn.lepton_track_id    (supera.CUInt_t(n.lepton_track_id))
+    larn.id                  (larcv.InstanceID_t(n.idx)) 
+    larn.interaction_id      (larcv.InstanceID_t(n.interaction_id))
     larn.current_type        (n.current_type)
     larn.interaction_mode    (n.interaction_mode)
     larn.interaction_type    (n.interaction_type)
     larn.target              (n.target)   
-    larn.nucleon             (n.nucleon)
-    larn.quark               (n.quark)
-    larn.hadronic_invariant_mass(n.hadronic_invariant_mass)
     larn.bjorken_x              (n.bjorken_x)
     larn.inelasticity           (n.inelasticity)
     larn.momentum_transfer      (n.momentum_transfer)
@@ -121,15 +117,25 @@ def larcv_neutrino(n):
     larn.lepton_pdg_code     (int(n.lepton_pdg_code))
     larn.momentum            (n.px, n.py, n.pz)
     larn.lepton_p            (n.lepton_p)
-    larn.position            (n.vtx.pos.x, n.vtx.pos.y, n.vtx.pos.z, n.vtx.time * US2NS)
-    larn.distance_travel     (n.dist_travel)
+    larn.position            (n.x, n.y, n.z, n.time * US2NS)
     larn.energy_init         (n.energy_init)
-    larn.energy_deposit      (n.energy_deposit)
-    larn.creation_process    (n.creation_process)
-    larn.num_voxels          (int(n.num_voxels))
    
     return larn
+  
+def larcv_flash(f):
 
+    larf=larcv.Flash()
+
+    larf.id              (int(f.flash_id))
+    larf.time            (f.time)
+    larf.timeWidth       (f.timeWidth)
+    larf.tpc             (f.tpc)
+    pe_vec = cppyy.gbl.std.vector('double')() #direct conversion of vector doesn't seem to work
+    for pe in (f.PEPerOpDet):
+        pe_vec.push_back(pe)
+    larf.PEPerOpDet      (pe_vec)
+
+    return larf
 
 def get_flow2supera(config_key):
 
@@ -266,24 +272,23 @@ def run_supera(out_file='larcv.root',
         driver.GenerateImageMeta(EventInput)
             
         meta   = larcv_meta(driver.Meta())
-        tensor_hits = writer.get_data("sparse3d", "hits")
-        
-        if not reader._is_sim:
 
+        if not reader._is_sim:
             time_generate = time.time() - t2
             if save_log: logger['time_generate'].append(time_generate)
 
             t3 = time.time()
+            tensor_hits = writer.get_data("sparse3d", "hits")
             driver.Meta().edep2voxelset(EventInput.unassociated_edeps).fill_std_vectors(id_v, value_v)
             larcv.as_event_sparse3d(tensor_hits, meta, id_v, value_v)          
 
-        if reader._is_sim:            
+        else:
+
             if input_data.trajectories is None:
                 print(f'[run_supera] WARNING skipping this entry {entry} as it appears to be "empty" (no truth association found, non-unique event id, etc.)')
                 continue
 
             driver.Meta().edep2voxelset(driver._edeps_all).fill_std_vectors(id_v, value_v)
-            larcv.as_event_sparse3d(tensor_hits, meta, id_v, value_v)
             driver.GenerateLabel(EventInput) 
             time_generate = time.time() - t2
             print("[run_supera] label creation  {:.3e} seconds".format(time_generate))
@@ -298,10 +303,10 @@ def run_supera(out_file='larcv.root',
             larcv.as_event_sparse3d(tensor_energy, meta, id_v, value_v)
             
             # Check the input image and label image match in the voxel set
-            ids_input = np.array([v.id() for v in tensor_energy.as_vector()])
-            ids_label = np.array([v.id() for v in tensor_hits.as_vector()])
+            #ids_input = np.array([v.id() for v in tensor_energy.as_vector()])
+            #ids_label = np.array([v.id() for v in tensor_hits.as_vector()])
  
-            assert np.allclose(ids_input,ids_label), '[run_supera] ERROR: the label and input data has different set of voxels'
+            #assert np.allclose(ids_input,ids_label), '[run_supera] ERROR: the label and input data has different set of voxels'
 
             tensor_semantic = writer.get_data("sparse3d", "pcluster_semantics")
             result.FillTensorSemantic(id_v, value_v)
@@ -329,6 +334,12 @@ def run_supera(out_file='larcv.root',
                     continue
                 larn = larcv_neutrino(ixn)
                 interaction.append(larn)
+
+        #Fill flashes
+        flash = writer.get_data("opflash", "light")
+        for fl in input_data.flashes:
+            larf = larcv_flash(fl)
+            flash.append(larf)
 
         #propagating trigger info
         trigger = writer.get_data("trigger", "base")

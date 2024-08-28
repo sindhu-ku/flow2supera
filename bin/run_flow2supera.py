@@ -9,7 +9,7 @@ parser.add_option("-o", "--output", dest="output_filename", metavar="FILE",
                   help="Output (LArCV) filename")
 parser.add_option("-c", "--config", dest="config", metavar='FILE/KEYWORD', default='',
                   help="Configuration keyword or a file path (full or relative including the file name)")
-parser.add_option("-n", "--num_events", dest="num_events", metavar="INT", default=-1,
+parser.add_option("-n", "--num_events", dest="num_events", metavar="INT", default=None,
                   help="number of events to process")
 parser.add_option("-s", "--skip", dest="skip", metavar="INT", default=0,
                   help="number of first events to skip")
@@ -53,7 +53,7 @@ if not flow2supera.config.get_config(data.config):
 flow2supera.utils.run_supera(out_file=data.output_filename,
     in_file=args[0],
     config_key=data.config,
-    num_events=int(data.num_events),
+    num_events=data.num_events if data.num_events is None else int(data.num_events),
     num_skip=int(data.skip),
     #ignore_bad_association=bool(data.ignore_bad_association),
     save_log=data.log_file,
