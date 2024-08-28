@@ -1,14 +1,16 @@
 import h5py 
 import h5flow
 import numpy as np
-from ROOT import supera
 from yaml import Loader
 import yaml
 import os
 import flow2supera
 import time
 import tqdm
+import sys
 
+FLOAT_MAX = sys.float_info.max
+INT_MAX = (1 << 31) - 1
 
 class InputEvent:
     event_id = -1
@@ -23,8 +25,41 @@ class InputEvent:
     t0 = -1
     segment_index_min = -1
     event_separator = ''
+    flashes = []
+    light_events = None
 
+class Flash:
+    flash_id = -1
+    time = FLOAT_MAX
+    timeWidth = FLOAT_MAX
+    PEPerOpDet = []
+    tpc = -1
 
+class Neutrino:
+    idx = INT_MAX
+    interaction_id = INT_MAX
+    target = INT_MAX
+    x = FLOAT_MAX
+    y = FLOAT_MAX
+    z = FLOAT_MAX
+    time = FLOAT_MAX
+    pdg_code =  INT_MAX
+    lepton_pdg_code = INT_MAX
+    energy_init = FLOAT_MAX
+    theta = FLOAT_MAX
+    momentum_transfer =  FLOAT_MAX
+    momentum_transfer_mag =  FLOAT_MAX
+    energy_transfer =  FLOAT_MAX
+    bjorken_x = FLOAT_MAX
+    inelasticity = FLOAT_MAX
+    px = FLOAT_MAX
+    py = FLOAT_MAX
+    pz = FLOAT_MAX
+    lepton_p = FLOAT_MAX
+    current_type = -1
+    interaction_mode = -1
+    interaction_type = -1
+    
 class InputReader:
     
     def __init__(self, parser_run_config, input_files=None,config=None):
@@ -33,8 +68,7 @@ class InputReader:
             raise TypeError('Input file must be a str type')
         self._event_ids = None
         self._event_t0s = None
-        self._flash_t0s = None
-        self._flash_ids = None
+        self._flashes = None
         self._event_hit_indices = None
         self._hits = None
         self._backtracked_hits = None
@@ -44,6 +78,7 @@ class InputReader:
         self._run_config = parser_run_config
         self._is_sim = False
         self._is_mpvmpr= False
+        self._has_light=False
         if config:
             if os.path.isfile(config):
                 file=config
@@ -80,7 +115,6 @@ class InputReader:
 
         # H5Flow's H5FlowDataManager class associated datasets through references
         # These paths help us get the correct associations
-
         events_path            = 'charge/events/'
         events_data_path       = 'charge/events/data/'
         event_hit_indices_path = 'charge/events/ref/charge/calib_prompt_hits/ref_region/'
@@ -93,9 +127,16 @@ class InputReader:
         segments_path          = 'mc_truth/segments/data'
         trajectories_path      = 'mc_truth/trajectories/data'
         
+        light_events_path = 'light/events/data'
+        flash_path = 'light/flash/data'
+        flash_light_ref_path = 'light/events/ref/light/flash/ref_region'
+        charge_light_ref_path = 'charge/events/ref/light/events/ref_region'
+
+        
         # TODO Currently only reading one input file at a time. Is it 
         # necessary to read multiple? If so, how to handle non-unique
         # event IDs?
+        
         #for f in input_files:
         flow_manager = h5flow.data.H5FlowDataManager(input_files, 'r')
         with h5py.File(input_files, 'r') as fin:
@@ -105,8 +146,16 @@ class InputReader:
             #ts_start is in ticks and 0.1 microseconds per tick for charge readout
             self._event_t0s = events_data['unix_ts'] + events_data['ts_start']/1e7 
             self._event_hit_indices = flow_manager[event_hit_indices_path]
-            self._hits              = flow_manager[calib_prompt_hits_path]
+            self._hits = flow_manager[calib_prompt_hits_path]
+            self._has_light = 'light' in fin.keys() and 'flash' in fin['light'].keys()
+            if self._has_light:
+                self._light_event_indices = flow_manager[charge_light_ref_path]
+                self._light_events = flow_manager[light_events_path]
+                self._flash_indices =  flow_manager[flash_light_ref_path]
+                self._flashes = flow_manager[flash_path]
+
             #self._is_sim = 'mc_truth' in fin.keys()
+            
             if self._is_sim:
                 self._backtracked_hits  = flow_manager[backtracked_hits_path]
                 self._segments     = np.array(flow_manager[segments_path])
@@ -128,36 +177,49 @@ class InputReader:
 
     
     def GetNeutrinoIxn(self, ixn, ixn_idx):
-        
-        nu_result = supera.Neutrino()
 
+        interaction = Neutrino()
         if isinstance(ixn,np.void):
-            return nu_result
+            return interaction
         
-        nu_result.id = int(ixn_idx)
-        nu_result.interaction_id = int(ixn['vertex_id']) 
-        nu_result.target = int(ixn['target'])
-        nu_result.vtx = supera.Vertex(ixn['x_vert'], ixn['y_vert'], ixn['z_vert'], ixn['t_vert'])
-        nu_result.pdg_code = int(ixn['nu_pdg'])
-        nu_result.lepton_pdg_code = int(ixn['lep_pdg'])  
-        nu_result.energy_init = ixn['Enu']
-        nu_result.theta = ixn['lep_ang']
-        nu_result.momentum_transfer =  ixn['Q2']
-        nu_result.momentum_transfer_mag =  ixn['q3']
-        nu_result.energy_transfer =  ixn['q0']
-        nu_result.bjorken_x = ixn['x']
-        nu_result.inelasticity = ixn['y']
-        nu_result.px = ixn['nu_4mom'][0]
-        nu_result.py = ixn['nu_4mom'][1]       
-        nu_result.pz = ixn['nu_4mom'][2]
-        nu_result.lepton_p = ixn['lep_mom']
-        if(ixn['isCC']): nu_result.current_type = 0
-        else: nu_result.current_type = 1
-        nu_result.interaction_mode = int(ixn['reaction'])
-        nu_result.interaction_type = int(ixn['reaction'])   
+        interaction.idx = int(ixn_idx)
+        interaction.interaction_id = int(ixn['vertex_id']) 
+        interaction.target = int(ixn['target'])
+        interaction.x = ixn['x_vert']
+        interaction.y = ixn['y_vert']
+        interaction.z = ixn['z_vert']
+        interaction.time = ixn['t_vert']
+        interaction.pdg_code = int(ixn['nu_pdg'])
+        interaction.lepton_pdg_code = int(ixn['lep_pdg'])  
+        interaction.energy_init = ixn['Enu']
+        interaction.theta = ixn['lep_ang']
+        interaction.momentum_transfer =  ixn['Q2']
+        interaction.momentum_transfer_mag =  ixn['q3']
+        interaction.energy_transfer =  ixn['q0']
+        interaction.bjorken_x = ixn['x']
+        interaction.inelasticity = ixn['y']
+        interaction.px = ixn['nu_4mom'][0]
+        interaction.py = ixn['nu_4mom'][1]       
+        interaction.pz = ixn['nu_4mom'][2]
+        interaction.lepton_p = ixn['lep_mom']
+        if(ixn['isCC']): interaction.current_type = 0
+        else: interaction.current_type = 1
+        interaction.interaction_mode = int(ixn['reaction'])
+        interaction.interaction_type = int(ixn['reaction'])   
         
-        return nu_result  
-        
+        return interaction  
+    
+    def GetFlash(self, flash, t0):
+
+        flash_result = Flash()
+        flash_result.flash_id = int(flash['id'])
+        flash_result.time = flash['hit_time_range'][0]*1e-9 + t0
+        flash_result.timeWidth = (flash['hit_time_range'][1] - flash['hit_time_range'][0])*1e-9
+        flash_result.PEPerOpDet = np.array(flash['deconv_sum']).flatten()#*0.022857 #adc charge to pe conversion
+        flash_result.tpc = int(flash['tpc'])
+
+        return flash_result
+    
     # To truth associations go as hits -> segments -> trajectories
 
 
@@ -257,6 +319,28 @@ class InputReader:
         hidx_min, hidx_max = self._event_hit_indices[entry]
         result.hits = self._hits[hidx_min:hidx_max]
         
+        if self._has_light:
+            #Light association
+            event_flashes = []
+
+            #link the light events associated with the charge event
+            light_events_start = self._light_event_indices[result.event_id][0]
+            light_events_stop = self._light_event_indices[result.event_id][1]
+
+            result.light_events = self._light_events[light_events_start:light_events_stop]
+
+            #link the flashes associated with the light events
+            for lev in result.light_events:
+                flash_start = self._flash_indices[lev['id']][0]
+                flash_end = self._flash_indices[lev['id']][1]
+                event_flashes.extend(self._flashes[flash_start:flash_end])
+
+            result.flashes = []
+    
+            for flash in event_flashes:
+                flash_result = self.GetFlash(flash, result.t0) #fix this with the actual light trigger time when the variable is added to flash
+                result.flashes.append(flash_result)
+                
         if not self._is_sim:
             print('[InputReader] SuperaInput filled (not sim)',time.time()-t0,'[s]')
             return result
@@ -269,7 +353,6 @@ class InputReader:
         
         st_event_id = self._valid_segment_event_ids[entry]
 
-
         result.segments = self._segments[self._segments['event_id']==st_event_id]
         result.trajectories = self._trajectories[self._trajectories['event_id']==st_event_id]
         
@@ -277,14 +360,15 @@ class InputReader:
             print('[InputReader] SuperaInput filled (sim, mpvmpr)',time.time()-t0,'[s]')
             return result
         
+        #Find true neutrino interactions associated with the reco events
         result.interactions = []
         
         result.true_event_id = st_event_id      
         interactions_array  = np.array(self._interactions)
         event_interactions = interactions_array[interactions_array['event_id'] == result.true_event_id]
         for ixn_idx, ixn in enumerate(event_interactions):
-            supera_nu = self.GetNeutrinoIxn(ixn, ixn_idx)
-            result.interactions.append(supera_nu)  
+            interaction = self.GetNeutrinoIxn(ixn, ixn_idx)
+            result.interactions.append(interaction)  
         
         print('[InputReader] SuperaInput filled (sim, not mpvmpr)',time.time()-t0,'[s]')
         return result 
@@ -295,12 +379,17 @@ class InputReader:
         print('Event ID {}'.format(input_event.event_id))
         print('Event t0 {}'.format(input_event.t0))
         print('Event hit indices (start, stop):', input_event.hit_indices)
-        print('hits shape:', input_event.hits.shape)
+        print('Hits shape:', input_event.hits.shape)
+
+        if self._has_light:
+            print('Associated light events:', len(input_event.light_events))
+            print('Associated flashes:', len(input_event.flashes))
+        
         if self._is_sim and len(input_event.hits) !=0:
             print('True event ID {}'.format(input_event.true_event_id))
             print('Backtracked hits len:', len(input_event.backtracked_hits))
-            print('segments in this event:', len(input_event.segments))
-            print('trajectories in this event:', len(input_event.trajectories))
-            print('interactions in this event:', len(input_event.interactions))
+            print('Segments in this event:', len(input_event.segments))
+            print('Trajectories in this event:', len(input_event.trajectories))
+            print('Interactions in this event:', len(input_event.interactions))
 
 
