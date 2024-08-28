@@ -204,7 +204,6 @@ def run_supera(out_file='larcv.root',
                save_log=None,
                verbose=False):
 
-    is_sim = False
     start_time = time.time()
 
     writer = get_iomanager(out_file)
@@ -212,15 +211,6 @@ def run_supera(out_file='larcv.root',
     driver = get_flow2supera(config_key)
 
     reader = flow2supera.reader.InputReader(driver.parser_run_config(), in_file,config_key)
-    if config_key:
-        if os.path.isfile(config_key):
-            file=config_key
-        else:
-            file=flow2supera.config.get_config(config_key)
-        with open(file,'r') as f:
-            cfg=yaml.load(f.read(),Loader=Loader)
-            if 'Type' in cfg.keys():
-                is_sim=cfg.get('Type')[0]=='sim'
 
     id_vv = ROOT.std.vector("std::vector<unsigned long>")()
     value_vv = ROOT.std.vector("std::vector<float>")()
@@ -231,7 +221,7 @@ def run_supera(out_file='larcv.root',
     if num_events < 0:
         num_events = len(reader)
 
-    print("--- startup {:.2e} seconds ---".format(time.time() - start_time))
+    print("[run_supera] startup {:.3e} seconds".format(time.time() - start_time))
 
     LOG_KEYS  = ['event_id','time_read','time_convert','time_generate', 'time_store', 'time_event']
     LOG_KEYS += ['raw_image_sum','raw_image_npx','raw_packet_sum','raw_packet_num',
@@ -244,9 +234,7 @@ def run_supera(out_file='larcv.root',
             logger[key]=[]
         driver.log(logger)
     
-    print("importing",cfg.get('Type'))
-
-    print("----------------Processing charge events----------------")
+    print(f"[run_supera] Processing {len(reader)} entries ")
     for entry in range(len(reader)):
 
         if num_skip and entry < num_skip:
@@ -257,19 +245,18 @@ def run_supera(out_file='larcv.root',
 
         num_events -= 1 
 
-        print(f'Processing Entry {entry}')
+        print(f'\n----- [run_supera] Processing Entry {entry} -----\n')
 
         t0 = time.time()
         input_data = reader.GetEntry(entry)
-        reader.EventDump(input_data)
-   
+        #reader.EventDump(input_data)
         time_read = time.time() - t0
-        print("--- reading input   {:.2e} seconds ---".format(time_read))
+        print("[run_supera] reading input   {:.3e} seconds".format(time_read))
 
         t1 = time.time()
         EventInput = driver.ReadEvent(input_data)
         time_convert = time.time() - t1
-        print("--- data conversion {:.2e} seconds ---".format(time_convert))
+        print("[run_supera] data conversion {:.3e} seconds".format(time_convert))
       
         t2 = time.time()
         driver.GenerateImageMeta(EventInput)
@@ -281,19 +268,19 @@ def run_supera(out_file='larcv.root',
         meta   = larcv_meta(driver.Meta())
         tensor_hits = writer.get_data("sparse3d", "hits")
         
-        if not is_sim:
+        if not reader._is_sim:
             driver.Meta().edep2voxelset(EventInput.unassociated_edeps).fill_std_vectors(id_v, value_v)
             larcv.as_event_sparse3d(tensor_hits, meta, id_v, value_v)
       
-        if is_sim:            
+        if reader._is_sim:            
             if input_data.trajectories is None:
-                print(f'[SuperaDriver] WARNING skipping this entry {entry} as it appears to be "empty" (no truth association found, non-unique event id, etc.)')
+                print(f'[run_supera] WARNING skipping this entry {entry} as it appears to be "empty" (no truth association found, non-unique event id, etc.)')
                 continue
             driver.Meta().edep2voxelset(driver._edeps_all).fill_std_vectors(id_v, value_v)
             larcv.as_event_sparse3d(tensor_hits, meta, id_v, value_v)
             driver.GenerateLabel(EventInput) 
             time_generate = time.time() - t2
-            print("--- label creation  {:.2e} seconds ---".format(time_generate))
+            print("[run_supera] label creation  {:.3e} seconds".format(time_generate))
 
             # Start data store process
             t3 = time.time()
@@ -307,7 +294,7 @@ def run_supera(out_file='larcv.root',
             ids_input = np.array([v.id() for v in tensor_energy.as_vector()])
             ids_label = np.array([v.id() for v in tensor_hits.as_vector()])
  
-            assert np.allclose(ids_input,ids_label), '[SuperaDriver] ERROR: the label and input data has different set of voxels'
+            assert np.allclose(ids_input,ids_label), '[run_supera] ERROR: the label and input data has different set of voxels'
 
             tensor_semantic = writer.get_data("sparse3d", "pcluster_semantics")
             result.FillTensorSemantic(id_v, value_v)
@@ -337,7 +324,7 @@ def run_supera(out_file='larcv.root',
                 interaction.append(larn)
             
             time_store = time.time() - t3
-            print("--- storing output  {:.2e} seconds ---".format(time_store))
+            print("[run_supera] storing output  {:.3e} seconds".format(time_store))
 
         #propagating trigger info
         trigger = writer.get_data("trigger", "base")
@@ -350,7 +337,7 @@ def run_supera(out_file='larcv.root',
         writer.save_entry()
 
         time_event = time.time() - t0
-        print("--- driver total    {:.2e} seconds ---".format(time_event))
+        print("[run_supera] driver total    {:.3e} seconds".format(time_event))
 
     writer.finalize()
 
@@ -360,7 +347,8 @@ def run_supera(out_file='larcv.root',
 
     end_time = time.time()
     
-    print("Total processing time in s: ", end_time-start_time)
+    print("\n----- [run_suera] finished -----\n")
+    print("[run_supera] Total processing time in s: ", end_time-start_time)
 
 
 

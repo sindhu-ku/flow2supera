@@ -3,16 +3,15 @@
 # ===============
 
 LogLevel:        INFO
-EventSeparator:  'spillID'
-ActiveDetectors: ["TPCActive_shape"]
-ParserConfigKeyword: '2x2'
-TileLayout: ''
-DetectorProperties: ''
-SimConfigKeyword: '2x2'
-#ParserRunConfig:
-#    event_separator: 'eventID'
-ElectronEnergyThreshold: 5
-Type: ['data', '']
+Flow2Supera:
+    PropertyConfig:
+        ParserConfigKeyword: '2x2'
+        SimConfigKeyword:    '2x2'
+        TileLayout: ''
+        DetectorProperties: ''
+
+    ElectronEnergyThreshold: 5
+    DataType: ['data', '']
 
 BBoxAlgorithm: BBoxInteraction
 BBoxConfig:
@@ -41,14 +40,15 @@ BBoxConfig:
 
 LabelAlgorithm: LArTPCMLReco3D
 LabelConfig:
+    #
+    # SuperaAtomic::Driver configuration
+    #
     LogLevel: WARNING
-    DeltaSize:     3
+    DeltaSize:    10
     ComptonSize:  10
-    LEScatterSize: 2
+    LEScatterSize: 5
     TouchDistance: 1
     StoreLEScatter:   True
     SemanticPriority: [1,0,2,3,4]
     EnergyDepositThreshold: 0.0
     RewriteInteractionID:  False
-    #WorldBoundMax: [-1.e20,-1.e20,-1.e20]
-    #WorldBoundMin: [ 1.e20, 1.e20, 1.e20]

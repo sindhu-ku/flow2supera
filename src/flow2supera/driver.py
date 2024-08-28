@@ -85,7 +85,10 @@ class SuperaDriver:
         self._search_association=True
         self._cluster_size_limit = 5
         self._dbscan_dist = 0.4435 * 1.99
-        self._dbscan=DBSCAN(eps=self._dbscan_dist,min_samples=1,n_jobs=-1)
+        self._dbscan_njobs = 1
+        self._dbscan=DBSCAN(eps=self._dbscan_dist,min_samples=1,n_jobs=self._dbscan_njobs)
+        self._dbscan_particle_cluster=True
+        self._dbscan_unassociated_edeps=True
 
         #
         # supera::Driver class objects
@@ -98,8 +101,6 @@ class SuperaDriver:
         self.GenerateLabel = self._core_driver.GenerateLabel
         self.Label = self._core_driver.Label
         self.Meta  = self._core_driver.Meta
-
-        print("Initialized SuperaDriver class")
 
     def parser_run_config(self):
         return self._run_config
@@ -158,34 +159,50 @@ class SuperaDriver:
 
     def ConfigureFromText(self,txt):
         self._core_driver.ConfigureFromText(txt)
-        print('Configured base supera')
-        print(txt)
         cfg=yaml.safe_load(txt)
 
-        if not self.LoadPropertyConfigs(cfg):
-            raise ValueError('Failed to configure flow2supera!')
+        print("\n----- [SuperaDriver] configuration dump -----\n")
+        print(yaml.dump(cfg,default_flow_style=False))
+        print()
+        if 'Flow2Supera' in cfg.keys():
+            if not isinstance(cfg['Flow2Supera'],dict):
+                raise TypeError('Flow2Supera configuration block should be a dict type')
 
-        if 'LabelConfig' in cfg:
-            alg_cfg = cfg['LabelConfig']
+            f2s_cfg = cfg['Flow2Supera']
 
-            self._electron_energy_threshold = alg_cfg.get('ElectronEnergyThreshold',
-                self._electron_energy_threshold)
-            self._ass_distance_limit = alg_cfg.get('AssDistanceLimit',
-                self._ass_distance_limit)
-            self._ass_charge_limit = alg_cfg.get('AssChargeLimit',
-                self._ass_charge_limit)
-            self._ass_fraction_limit = alg_cfg.get('AssFractionLimit',
-                self._ass_fraction_limit)
-            self._search_association = alg_cfg.get('SearchAssociation',
-                self._search_association)
-            self._cluster_size_limit = alg_cfg.get('ClusterSizeLimit',
-                self._cluster_size_limit)
-            self._dbscan_dist = cfg.get('DBSCANDist',
-                self._dbscan_dist)
-            self._dbscan=DBSCAN(eps=self._dbscan_dist,min_samples=1,n_jobs=-1)
-        
 
-        print('Configuring done')
+            if not self.LoadPropertyConfigs(f2s_cfg.get('PropertyConfig',dict())):
+                raise ValueError('Failed to configure flow2supera!')
+
+            self._electron_energy_threshold = f2s_cfg.get('ElectronEnergyThreshold',self._electron_energy_threshold)
+            self._ass_distance_limit = f2s_cfg.get('AssDistanceLimit',self._ass_distance_limit)
+            self._ass_charge_limit = f2s_cfg.get('AssChargeLimit',self._ass_charge_limit)
+            self._ass_fraction_limit = f2s_cfg.get('AssFractionLimit',self._ass_fraction_limit)
+            self._search_association = f2s_cfg.get('SearchAssociation',self._search_association)
+            self._cluster_size_limit = f2s_cfg.get('ClusterSizeLimit',self._cluster_size_limit)
+            self._dbscan_dist = f2s_cfg.get('DBSCANDist',self._dbscan_dist)
+            self._dbscan_njobs = f2s_cfg.get('DBSCANNjobs',self._dbscan_njobs)
+            self._dbscan_particle_cluster = f2s_cfg.get('DBSCANParticleCluster',self._dbscan_particle_cluster)
+            self._dbscan_unassociated_edeps = f2s_cfg.get('DBSCANUnassociatedEDeps',self._dbscan_unassociated_edeps)
+
+            self._dbscan=DBSCAN(eps=self._dbscan_dist,min_samples=1,n_jobs=1)
+
+            print(type(self._dbscan_particle_cluster),self._dbscan_particle_cluster)
+            print(type(self._dbscan_unassociated_edeps),self._dbscan_unassociated_edeps)
+        else:
+            raise KeyError('The configuration missing Flow2Supera block')
+
+        print('\nConfiguration finished. Dumping attributes with values...\n')
+
+        exclude_list=['_core_driver','_geom_dict','_run_config']
+        for name,value in vars(self).items():
+            if callable(value):
+                continue
+            if name in exclude_list:
+                continue
+            print(name,'=>',value)
+
+        print()
 
     def ReadEvent(self, data, is_sim=True,verbose=False):
 
@@ -281,7 +298,7 @@ class SuperaDriver:
 
 
         if verbose:
-            print("--- trajectory filling %s seconds ---" % (time.time() - start_time))
+            print("[SuperaDriver] trajectory filling %s seconds " % (time.time() - start_time))
 
 
         #
@@ -347,16 +364,16 @@ class SuperaDriver:
             # - nan?
             if (packet_fractions == 0.).sum() == len(packet_seg_ids):
                 if verbose > 0:
-                    print('[WARNING] found a packet with no association!')
+                    print('[SuperaDriver] WARNING: found a packet with no association!')
                 if not self._log is None:
                     self._log['packet_noass_input'][-1] += 1
             if not 0. in packet_fractions:
                 if verbose > 1:
-                    print('[INFO] found',len(packet_seg_ids),'associated track IDs maxing out the recording array size')
+                    print('[SuperaDriver] INFO: found',len(packet_seg_ids),'associated track IDs maxing out the recording array size')
                 if not self._log is None:
                     self._log['ass_saturation'][-1] += 1
             if np.isnan(packet_fractions).sum() > 0:
-                print('    [ERROR]: found nan in fractions of a packet:', packet_fractions)
+                print('[SuperaDriver] ERROR: found nan in fractions of a packet:', packet_fractions)
                 if not self._log is None:
                     self._log['fraction_nan'][-1] += 1
 
@@ -466,7 +483,7 @@ class SuperaDriver:
                     self._log['ass_frac'][-1] += 1
 
             if verbose > 1:
-                print('[INFO] Assessing packet',ip)
+                print('[SuperaDriver] INFO: Assessing packet',ip)
                 print('       Associated?',seg_flag.sum())
                 print('       Segments :', packet_seg_ids)
                 print('       TrackIDs :', [data.segments[self._segid2idx[packet_seg_ids[idx]]]['traj_id'] for idx in range(packet_seg_ids.shape[0])])
@@ -476,63 +493,70 @@ class SuperaDriver:
                 print('       Distance :', ['%.3f' % f for f in seg_dist])
 
         if verbose:
-            print("--- filling edep %s seconds ---" % (time.time() - start_time))
+            print("[SuperaDriver] filling edep %s seconds" % (time.time() - start_time))
 
         start_time = time.time()
-        for sp in supera_event:
-            pts = np.array([[pt.x,pt.y,pt.z,pt.e] for pt in sp.pcloud])
-            if len(pts)<1:
-                continue
-            self._dbscan.fit(pts[:,:3])
-            ids,sizes=np.unique(self._dbscan.labels_,return_counts=True)
+        if self._dbscan_particle_cluster:
+            for sp in supera_event:
+                pts = np.array([[pt.x,pt.y,pt.z,pt.e] for pt in sp.pcloud])
+                if len(pts)<1:
+                    continue
+                self._dbscan.fit(pts[:,:3])
+                ids,sizes=np.unique(self._dbscan.labels_,return_counts=True)
 
-            # if only 1 cluster, nothing needs to be done
-            if len(ids)==1:
-                continue
+                # if only 1 cluster, nothing needs to be done
+                if len(ids)==1:
+                    continue
 
-            # otherwise, keep the largest cluster and any other cluster larger than the LEScatter limit
-            mask = (sizes == np.max(sizes))
-            mask = (mask | (sizes >= self._cluster_size_limit))
+                # otherwise, keep the largest cluster and any other cluster larger than the LEScatter limit
+                mask = (sizes == np.max(sizes))
+                mask = (mask | (sizes >= self._cluster_size_limit))
 
-            # if all voxels are to be kept, continue
-            if mask.sum() == len(mask):
-                continue
+                # if all voxels are to be kept, continue
+                if mask.sum() == len(mask):
+                    continue
 
-            ids_to_keep = ids[mask]
-            mask = np.zeros(len(pts),dtype=bool)
-            for cid in ids_to_keep:
-                mask = mask | (self._dbscan.labels_ == cid)
+                ids_to_keep = ids[mask]
+                mask = np.zeros(len(pts),dtype=bool)
+                for cid in ids_to_keep:
+                    mask = mask | (self._dbscan.labels_ == cid)
 
-            pcloud = std.vector('supera::EDep')()
-            pcloud.reserve(int(mask.sum()))
-            for edep_idx in np.where(mask)[0]:
-                pcloud.push_back(sp.pcloud[int(edep_idx)])
+                pcloud = std.vector('supera::EDep')()
+                pcloud.reserve(int(mask.sum()))
+                for edep_idx in np.where(mask)[0]:
+                    pcloud.push_back(sp.pcloud[int(edep_idx)])
 
-            self._edeps_unassociated.reserve(self._edeps_unassociated.size()+int((~mask).sum()))
-            for edep_idx in np.where(~mask)[0]:
-                self._edeps_unassociated.push_back(sp.pcloud[int(edep_idx)])
+                self._edeps_unassociated.reserve(self._edeps_unassociated.size()+int((~mask).sum()))
+                for edep_idx in np.where(~mask)[0]:
+                    self._edeps_unassociated.push_back(sp.pcloud[int(edep_idx)])
 
-            sp.pcloud = pcloud
+                sp.pcloud = pcloud
+
 
         # DBSCAN unassociated edeps
         pts = np.array([[pt.x,pt.y,pt.z] for pt in self._edeps_unassociated])
         supera_event.unassociated_edeps.clear()
 
         if len(pts):
-            self._dbscan.fit(pts)
-            cids=np.unique(self._dbscan.labels_)
-            if -1 in cids:
-                raise ValueError('Invalid cluster ID in DBSCAN while analyzing unassociated edeps')
+            if self._dbscan_unassociated_edeps:
+                self._dbscan.fit(pts)
+                cids=np.unique(self._dbscan.labels_)
+                if -1 in cids:
+                    raise ValueError('Invalid cluster ID in DBSCAN while analyzing unassociated edeps')
 
-            supera_event.unassociated_edeps.resize(int(cids.max()+1))
-            for cid in cids:
-                edep_index_v = (self._dbscan.labels_ == cid).nonzero()
-                supera_event.unassociated_edeps[int(cid)].resize(len(edep_index_v))
-                for idx in edep_index_v[0]:
-                    supera_event.unassociated_edeps[int(cid)].push_back(self._edeps_unassociated[int(idx)])
+                supera_event.unassociated_edeps.resize(int(cids.max()+1))
+                for cid in cids:
+                    edep_index_v = (self._dbscan.labels_ == cid).nonzero()
+                    supera_event.unassociated_edeps[int(cid)].resize(len(edep_index_v))
+                    for idx in edep_index_v[0]:
+                        supera_event.unassociated_edeps[int(cid)].push_back(self._edeps_unassociated[int(idx)])
+            else:
+                supera_event.unassociated_edeps.resize(len(pts))
+                for cid in range(len(pts)):
+                    supera_event.unassociated_edeps[int(cid)].push_back(self._edeps_unassociated[int(cid)])
 
         if verbose:
-            print("--- Finising ReadEvent %s seconds ---" % (time.time() - read_event_start_time))
+            print("[SuperaDriver] Finising ReadEvent %s seconds" % (time.time() - read_event_start_time))
 
         return supera_event
 

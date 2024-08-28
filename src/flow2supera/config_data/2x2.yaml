@@ -3,16 +3,24 @@
 # ===============
 
 LogLevel:        INFO
-EventSeparator:  'spillID'
-ActiveDetectors: ["TPCActive_shape"]
-ParserConfigKeyword: '2x2'
-TileLayout: ''
-DetectorProperties: ''
-SimConfigKeyword: '2x2'
-#ParserRunConfig:
-#    event_separator: 'eventID'
-ElectronEnergyThreshold: 5
-Type: ['sim', 'neutrino']
+    PropertyConfig:
+        ParserConfigKeyword: '2x2'
+        SimConfigKeyword:    '2x2'
+        TileLayout: ''
+        DetectorProperties: ''
+
+    #
+    # flow2supera.Driver configuration
+    #
+    AssChargeLimit: 0.09
+    AssFractionLimit: 0.1
+    ElectronEnergyThreshold: 0
+    DataType: ['sim', 'neutrino']
+    ClusterSizeLimit: 5
+    DBSCANDist: 0.882366 # 1.99 * 0.4434
+    DBSCANNjobs: 1 # -1 = all cores, but 1 may be faster
+    DBSCANParticleCluster: True
+    DBSCANUnassociatedEDeps: True
 
 BBoxAlgorithm: BBoxInteraction
 BBoxConfig:
@@ -41,15 +49,16 @@ BBoxConfig:
 
 LabelAlgorithm: LArTPCMLReco3D
 LabelConfig:
+    #
+    # SuperaAtomic::Driver configuration
+    #
     LogLevel: WARNING
-    DeltaSize:     3
+    DeltaSize:    10
     ComptonSize:  10
-    LEScatterSize: 2
+    LEScatterSize: 5
     TouchDistance: 1
     StoreLEScatter:   True
     SemanticPriority: [1,0,2,3,4]
     EnergyDepositThreshold: 0.0
     RewriteInteractionID:  False
-    #WorldBoundMax: [-1.e20,-1.e20,-1.e20]
-    #WorldBoundMin: [ 1.e20, 1.e20, 1.e20]drinkingkazu@sakura:~/sw/flow2supera$ 
 

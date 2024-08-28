@@ -50,11 +50,16 @@ class InputReader:
             else:
                 file=flow2supera.config.get_config(config)
             with open(file,'r') as f:
-                cfg=yaml.load(f.read(),Loader=Loader)
-                if 'Type' in cfg.keys():
-                    self._is_sim=cfg.get('Type')[0]=='sim'
-                    self._is_mpvmpr=cfg.get('Type')[1]=='mpvmpr'  
+                cfg=yaml.safe_load(f.read())
+                if 'Flow2Supera' in cfg.keys():
+                    if not isinstance(cfg['Flow2Supera'],dict):
+                        raise TypeError('Flow2Supera configuration block should be a dict type')
+
+                    if 'DataType' in cfg['Flow2Supera']:
+                        self._is_sim=cfg['Flow2Supera'].get('DataType')[0]=='sim'
+                        self._is_mpvmpr=cfg['Flow2Supera'].get('DataType')[1]=='mpvmpr'  
                 
+        print(f'[InputReader] is sim? {self._is_sim} is mpvmpr? {self._is_mpvmpr}')
 
         
         if input_files:
@@ -178,7 +183,7 @@ class InputReader:
             if sum(valid_frac_counts) > 0:
                 # case the original error was not due to empty association, re-raise
                 raise
-            print(f'[SuperaDriver] UNEXPECTED: found no hit with any association to the truth hit')
+            print(f'[InputReader] UNEXPECTED: found no hit with any association to the truth hit')
             return np.array([])
 
 
@@ -189,7 +194,7 @@ class InputReader:
         bad_event_ids = []
         empty_entries = []
         
-        print('Checking the event IDs in this file...')
+        print('[InputReader] Checking the event IDs in this file...')
         for entry,(hidx_min,hidx_max) in tqdm.tqdm(enumerate(self._event_hit_indices),desc='Scanning event IDs'):
             bhits = self._backtracked_hits[hidx_min:hidx_max]
             if len(bhits) == 0: 
@@ -209,11 +214,11 @@ class InputReader:
         bad_entries = [entry for entry in bad_entries if entry not in empty_entries]
         
         if len(empty_entries) > 0:
-            print('WARNING: These entries have no hits:', empty_entries)
+            print('[Inputreader] WARNING: These entries have no hits:', empty_entries)
  
         if len(bad_entries) > 0:
-            print('WARNING: entries where more than one event ID is found:',bad_entries)
-            print('         corresponding event IDs stored:',[list(ids) for ids in bad_event_ids])
+            print('[Inputreader] WARNING: entries where more than one event ID is found:',bad_entries)
+            print('                       corresponding event IDs stored:',[list(ids) for ids in bad_event_ids])
 
         # Find other impacted entries
         if len(bad_event_ids):
@@ -223,7 +228,7 @@ class InputReader:
         for bad_id in bad_event_ids:
             mask = mask | (eid_val == bad_id)
         if mask.sum():
-            print('WARNING: other entries impacted by bad event IDs:',mask.nonzero()[0])
+            print('[Inputreader] WARNING: other entries impacted by bad event IDs:',mask.nonzero()[0])
 
         entry_mask = mask | (eid_val == -1)
         eid_val[entry_mask] = -1
@@ -237,8 +242,8 @@ class InputReader:
     def GetEntry(self, entry):
         
         if entry >= len(self._event_ids):
-            print('Entry {} is above allowed entry index ({})'.format(entry, len(self._event_ids)))
-            print('Invalid read request (returning None)')
+            print('[Inputreader] Entry {} is above allowed entry index ({})'.format(entry, len(self._event_ids)))
+            print('              Invalid read request (returning None)')
             return None
 
         t0=time.time()
@@ -253,12 +258,13 @@ class InputReader:
         result.hits = self._hits[hidx_min:hidx_max]
         
         if not self._is_sim:
+            print('[InputReader] SuperaInput filled (not sim)',time.time()-t0,'[s]')
             return result
         
         result.backtracked_hits = self._backtracked_hits[hidx_min:hidx_max]
         
         if self._valid_segment_event_ids[entry] < 0:
-            print(f'[SuperaDriver] Skipping this entry ({entry})...')
+            print(f'[InputReader] Skipping this entry ({entry})...')
             return result
         
         st_event_id = self._valid_segment_event_ids[entry]
@@ -268,6 +274,7 @@ class InputReader:
         result.trajectories = self._trajectories[self._trajectories['event_id']==st_event_id]
         
         if self._is_mpvmpr:
+            print('[InputReader] SuperaInput filled (sim, mpvmpr)',time.time()-t0,'[s]')
             return result
         
         result.interactions = []
@@ -279,12 +286,12 @@ class InputReader:
             supera_nu = self.GetNeutrinoIxn(ixn, ixn_idx)
             result.interactions.append(supera_nu)  
         
-        print('SuperaInput filled',time.time()-t0,'[s]')
+        print('[InputReader] SuperaInput filled (sim, not mpvmpr)',time.time()-t0,'[s]')
         return result 
 
 
     def EventDump(self, input_event):
-        print('-----------EVENT DUMP-----------------')
+        print('-----------EVENT DUMP [InputReader] ------------')
         print('Event ID {}'.format(input_event.event_id))
         print('Event t0 {}'.format(input_event.t0))
         print('Event hit indices (start, stop):', input_event.hit_indices)

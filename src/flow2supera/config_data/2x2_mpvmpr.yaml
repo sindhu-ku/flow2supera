@@ -3,18 +3,26 @@
 # ===============
 
 LogLevel:        WARNING
-EventSeparator:  'spillID'
-ActiveDetectors: ["TPCActive_shape"]
-ParserConfigKeyword: '2x2'
-SimConfigKeyword:    '2x2_mpvmpr'
-TileLayout: ''
-DetectorProperties: ''
-#ParserRunConfig:
-#    event_separator: 'eventID'
-ElectronEnergyThreshold: 5
-Type: ['sim', 'mpvmpr']
-ClusterSizeLimit: 5
-DBSCANDist: 0.882366 # 1.99 * 0.4434
+
+Flow2Supera:
+    PropertyConfig:
+        ParserConfigKeyword: '2x2'
+        SimConfigKeyword:    '2x2_mpvmpr'
+        TileLayout: ''
+        DetectorProperties: ''
+    #
+    # flow2supera.Driver configuration
+    #
+    AssChargeLimit: 0.09
+    AssFractionLimit: 0.1
+    ElectronEnergyThreshold: 0
+    DataType: ['sim', 'mpvmpr']
+    ClusterSizeLimit: 5
+    DBSCANDist: 0.882366 # 1.99 * 0.4434
+    DBSCANNjobs: 1 # -1 = all cores, but 1 may be faster
+    DBSCANParticleCluster: True
+    DBSCANUnassociatedEDeps: True
+
 
 BBoxAlgorithm: BBoxInteraction
 BBoxConfig:
@@ -43,6 +51,9 @@ BBoxConfig:
 
 LabelAlgorithm: LArTPCMLReco3D
 LabelConfig:
+    #
+    # SuperaAtomic::Driver configuration
+    #
     LogLevel: WARNING
     DeltaSize:    10
     ComptonSize:  10
@@ -51,8 +62,5 @@ LabelConfig:
     StoreLEScatter:   True
     SemanticPriority: [1,0,2,3,4]
     EnergyDepositThreshold: 0.0
-    AssChargeLimit: 0.09
-    AssFractionLimit: 0.1
     RewriteInteractionID:  False
-    #WorldBoundMax: [-1.e20,-1.e20,-1.e20]
-    #WorldBoundMin: [ 1.e20, 1.e20, 1.e20]
+
