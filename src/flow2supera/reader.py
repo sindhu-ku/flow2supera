@@ -27,10 +27,8 @@ class InputEvent:
 
 class InputReader:
     
-    def __init__(self, parser_run_config, input_files=None,config=None):
-        self._input_files = input_files
-        if not isinstance(input_files, str):
-            raise TypeError('Input file must be a str type')
+    def __init__(self, parser_run_config, config=None):
+
         self._event_ids = None
         self._event_t0s = None
         self._flash_t0s = None
@@ -61,9 +59,6 @@ class InputReader:
                 
         print(f'[InputReader] is sim? {self._is_sim} is mpvmpr? {self._is_mpvmpr}')
 
-        
-        if input_files:
-            self.ReadFile(input_files)
 
     def __len__(self):
         if self._event_ids is None: return 0
@@ -74,8 +69,10 @@ class InputReader:
         for entry in range(len(self)):
             yield self.GetEvent(entry)
 
-    def ReadFile(self, input_files, verbose=False):
-        
+    def ReadFile(self, input_file, entries_to_read=None, verbose=False):
+        if not isinstance(input_file, str):
+            raise TypeError('Input file must be a str type')
+
         print('Reading input file...')
 
         # H5Flow's H5FlowDataManager class associated datasets through references
@@ -96,9 +93,8 @@ class InputReader:
         # TODO Currently only reading one input file at a time. Is it 
         # necessary to read multiple? If so, how to handle non-unique
         # event IDs?
-        #for f in input_files:
-        flow_manager = h5flow.data.H5FlowDataManager(input_files, 'r')
-        with h5py.File(input_files, 'r') as fin:
+        flow_manager = h5flow.data.H5FlowDataManager(input_file, 'r')
+        with h5py.File(input_file, 'r') as fin:
             events = flow_manager[events_path]
             events_data = events['data']
             self._event_ids = events_data['id']
@@ -106,6 +102,10 @@ class InputReader:
             self._event_t0s = events_data['unix_ts'] + events_data['ts_start']/1e7 
             self._event_hit_indices = flow_manager[event_hit_indices_path]
             self._hits              = flow_manager[calib_prompt_hits_path]
+
+            if entries_to_read is not None:
+                self._event_ids = events_data['id'][:entries_to_read]
+                self._event_hit_indices = flow_manager[event_hit_indices_path][:entries_to_read]
             #self._is_sim = 'mc_truth' in fin.keys()
             if self._is_sim:
                 self._backtracked_hits  = flow_manager[backtracked_hits_path]
@@ -121,10 +121,10 @@ class InputReader:
                 # Quality check: event IDs from segments are consistent with the info stored at the event level
                 if not len(self._event_hit_indices) == len(self._event_ids):
                     print('The number of entries do not match between event_data and backtrack hit range array')
-                    print(event_path,'...',len(self._event_ids))
-                    print(event_hit_indices_path,'...',len(self._event_hit_indices))
+                    print(events_path,'...',len(self._event_ids))
+                    print(events_hit_indices_path,'...',len(self._event_hit_indices))
                     raise ValueError('Array length mismatch in the input file')
-                self._valid_segment_event_ids = self.FileQualityCheck()
+                self._valid_segment_event_ids = self.FileQualityCheck(entries_to_read)
 
     
     def GetNeutrinoIxn(self, ixn, ixn_idx):
@@ -187,15 +187,22 @@ class InputReader:
             return np.array([])
 
 
-    def FileQualityCheck(self):
+    def FileQualityCheck(self,entries_to_read=None):
 
-        eid_ctr = np.zeros(len(self._event_hit_indices),dtype=int)
-        eid_val = np.full(len(self._event_hit_indices),fill_value=-1,dtype=int)
+        num_entries = len(self._event_hit_indices)
+        if entries_to_read is not None:
+            num_entries = min(num_entries,int(entries_to_read))
+        eid_ctr = np.zeros(num_entries,dtype=int)
+        eid_val = np.full(num_entries,fill_value=-1,dtype=int)
         bad_event_ids = []
         empty_entries = []
         
-        print('[InputReader] Checking the event IDs in this file...')
+        print(f'[InputReader] Checking the event IDs in this file... (reading {num_entries})')
         for entry,(hidx_min,hidx_max) in tqdm.tqdm(enumerate(self._event_hit_indices),desc='Scanning event IDs'):
+
+            if entry >= num_entries:
+                break
+
             bhits = self._backtracked_hits[hidx_min:hidx_max]
             if len(bhits) == 0: 
                 empty_entries.append(entry)

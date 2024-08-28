@@ -47,22 +47,13 @@ class ID2Index:
 class SuperaDriver:
 
     LOG_KEYS = ('ass_saturation', # number of packets where the association array is full (target 0)
-        'residual_q',             # anaccounted energy summed over all packets (target 0)
         'packet_ctr',             # the total number of "data" (type==0) packets (arbitrary, N)
         'packet_noass_input',     # number of packets with no associated segments from the input (target 0)
-        'packet_noass',           # number of packets with no valid association could be made (target 0)
         'packet_frac_sum',        # the average sum of fraction values from the input
         'fraction_nan',           # number of packets that contain >=1 nan in associated fraction (target 0)
         'ass_frac',               # the fraction of total packets where >=1 association could be made (target 1)
         'ass_charge_frac',        # the average of total charge fraction used from the input fraction info (target 1)
-        'ass_drop_charge',        # the sum of fraction of associations dropped by charge (target 0)
-        'ass_negative_charge',    # the sum of fraction of negative association droped by charge (arbitrary)
-        'ass_drop_dist',          # the sum of fraction of associations dropped by the distance (target 0)
         'drop_ctr_total',
-        'drop_ctr_dist3d',
-        'drop_ctr_drift_dist',
-        'drop_ctr_low_charge',
-        'drop_ctr_negative_charge',
         )
 
     def __init__(self):
@@ -72,7 +63,6 @@ class SuperaDriver:
         self._trackid2idx = ID2Index()
         self._segid2idx = ID2Index()
         #self._trajectory_id_to_index = std.vector('supera::Index_t')()
-        self._allowed_detectors = std.vector('std::string')()
         self._edeps_unassociated = std.vector('supera::EDep')()
         self._edeps_all = std.vector('supera::EDep')()
         self._ass_distance_limit=0.4434*6
@@ -213,7 +203,10 @@ class SuperaDriver:
         if not self._log is None:
             for key in self.LOG_KEYS:
                 self._log[key].append(0)
+
         supera_event = supera.EventInput()
+        self._edeps_unassociated.clear() 
+        self._edeps_all.clear();
         
         if not is_sim:
             hits = data.hits
@@ -316,12 +309,9 @@ class SuperaDriver:
         seg_dist  = None
 
         # a list to keep energy depositions w/o true association
-        self._edeps_unassociated.clear() 
         self._edeps_unassociated.reserve(len(data.hits))
-        self._edeps_all.clear();
         self._edeps_all.reserve(len(data.hits))
 
-        check_raw_sum=0
         check_ana_sum=0
 
         backtracked_hits = data.backtracked_hits
@@ -330,7 +320,9 @@ class SuperaDriver:
             packet_seg_pdg = np.zeros_like(packet_seg_idx).astype(int)
             packet_seg_trkid = np.zeros_like(packet_seg_idx).astype(int)
 
-        # TODO Calculate the length of this in advance and use reserve; appending is slow!
+        if not self._log is None:
+            self._log['packet_ctr'][-1] = len(backtracked_hits)
+
         for i_bt, bhit in enumerate(backtracked_hits):
 
             reco_hit = data.hits[i_bt]
@@ -342,7 +334,6 @@ class SuperaDriver:
             raw_edep.x, raw_edep.y, raw_edep.z = reco_hit['x'], reco_hit['y'], reco_hit['z']
             raw_edep.e = reco_hit['E']
             self._edeps_all.push_back(raw_edep)
-            check_raw_sum += reco_hit['E']
 
             # We analyze and modify segments and fractions, so make a copy
             packet_seg_ids   = np.array(bhit['segment_ids'])
@@ -546,9 +537,9 @@ class SuperaDriver:
 
                 supera_event.unassociated_edeps.resize(int(cids.max()+1))
                 for cid in cids:
-                    edep_index_v = (self._dbscan.labels_ == cid).nonzero()
-                    supera_event.unassociated_edeps[int(cid)].resize(len(edep_index_v))
-                    for idx in edep_index_v[0]:
+                    edep_index_v = (self._dbscan.labels_ == cid).nonzero()[0]
+                    supera_event.unassociated_edeps[int(cid)].reserve(len(edep_index_v))
+                    for idx in edep_index_v:
                         supera_event.unassociated_edeps[int(cid)].push_back(self._edeps_unassociated[int(idx)])
             else:
                 supera_event.unassociated_edeps.resize(len(pts))

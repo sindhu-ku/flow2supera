@@ -142,7 +142,7 @@ def get_flow2supera(config_key):
 
     return driver 
 
-def log_supera_integrity_check(data, driver, log, verbose=False):
+def log_supera_integrity_check(input_data, driver, log, verbose=False):
 
     if not log:
         return
@@ -151,54 +151,47 @@ def log_supera_integrity_check(data, driver, log, verbose=False):
     meta  = driver.Meta()
 
     # Packet tensor
-    pcloud = np.array([[edep.x,edep.y,edep.z,edep.e] for edep in driver._edeps_all])
-    voxels = meta.edep2voxelset(driver._edeps_all)
-    voxels = np.array([[meta.pos_x(vox.id()),
-                        meta.pos_y(vox.id()),
-                        meta.pos_z(vox.id()),
-                        vox.value()] for vox in voxels.as_vector()
-                      ]
-                     ) 
-    
-    cluster_sum = np.sum([p.energy.sum() for p in label.Particles()])
-    input_sum  = np.sum([np.sum([edep.e for edep in p.pcloud]) for p in data])
-    input_unass= np.sum([edep.e for edep in data.unassociated_edeps])
-    energy_sum = label._energies.sum()
-    energy_num = label._energies.size()
-    pcloud_sum = np.sum(pcloud[:,3])
-    pcloud_num = pcloud.shape[0]
-    voxels_sum = np.sum(voxels[:,3])
-    voxels_num = voxels.shape[0]
-    unass_sum  = np.sum([vox.value() for vox in label._unassociated_voxels.as_vector()])
-    
-    if verbose:
-        print('  Raw image    :',voxels_num,'voxels with the sum',voxels_sum)
-        print('  Packets      :',pcloud_num,'packets with the sum',pcloud_sum)
-        print('  Input cluster:',input_sum)
-        print('  Input unass. :',input_unass)
-        print('  Label image  :',energy_num,'voxels with the sum',energy_sum)
-        print('  Label cluster:',cluster_sum)
-        print('  Unassociated :',unass_sum)
-        print('  Label image - (Cluster sum + Unassociated)',energy_sum - (cluster_sum + unass_sum))
-        print('  Label image - Raw image',energy_sum - voxels_sum)
-        print('  Packets - Raw image',pcloud_sum - voxels_sum)
+    all_edeps = np.array([edep.e for edep in driver._edeps_all])
+    all_voxel = meta.edep2voxelset(driver._edeps_all)
+    all_voxel = np.array([vox.value() for vox in all_voxel.as_vector()])
 
-    log['raw_image_sum'].append(voxels_sum)
-    log['raw_image_npx'].append(voxels_num)
-    log['raw_packet_sum'].append(pcloud_sum)
-    log['raw_packet_num'].append(pcloud_num)
-    log['in_cluster_sum'].append(input_sum)
-    log['in_unass_sum'].append(input_unass)
-    log['out_image_sum'].append(energy_sum)
-    log['out_image_num'].append(energy_num)
-    log['out_cluster_sum'].append(cluster_sum)
-    log['out_unass_sum'].append(unass_sum)
+    in_edeps = [[edep.e for edep in p.pcloud] for p in input_data if p.pcloud.size()]
+    in_edeps_unass = np.array([edep.e for edep in driver._edeps_unassociated])
+    in_voxel_unass = meta.edep2voxelset(driver._edeps_unassociated)
+    in_voxel_unass = np.array([vox.value() for vox in in_voxel_unass.as_vector()])
+
+    out_voxel_cluster = [[vox.value() for vox in p.energy.as_vector()] for p in label.Particles() if p.energy.size()]
+    out_voxel_tensor  = np.array([vox.value() for vox in label._energies.as_vector()])
+    out_voxel_unass   = np.array([vox.value() for vox in label._unassociated_voxels.as_vector()])
+
+    if len(in_edeps): in_edeps = np.concatenate(in_edeps)
+    if len(out_voxel_cluster): out_voxel_cluster = np.concatenate(out_voxel_cluster)
+
+    log['raw_edeps_sum'].append(np.sum(all_edeps))
+    log['raw_edeps_num'].append(len(all_edeps))
+    log['raw_voxel_sum'].append(np.sum(all_voxel))
+    log['raw_voxel_num'].append(len(all_voxel))
+
+    log['in_edeps_sum'].append(np.sum(in_edeps))
+    log['in_edeps_num'].append(len(in_edeps))
+    log['in_edeps_unass_sum'].append(np.sum(in_edeps_unass))
+    log['in_edeps_unass_num'].append(len(in_edeps_unass))
+    log['in_voxel_unass_sum'].append(np.sum(in_voxel_unass))
+    log['in_voxel_unass_num'].append(len(in_voxel_unass))
+    
+    log['out_voxel_tensor_sum'].append(np.sum(out_voxel_tensor))
+    log['out_voxel_tensor_num'].append(len(out_voxel_tensor))
+    log['out_voxel_cluster_sum'].append(np.sum(out_voxel_cluster))
+    log['out_voxel_cluster_num'].append(len(out_voxel_cluster))
+    log['out_voxel_unass_sum'].append(np.sum(out_voxel_unass))
+    log['out_voxel_unass_num'].append(len(out_voxel_unass))
+
     
 # Fill SuperaAtomic class and hand off to label-making
 def run_supera(out_file='larcv.root',
                in_file='',
                config_key='',
-               num_events=-1,
+               num_events=None,
                num_skip=0,
             #    ignore_bad_association=True,
                save_log=None,
@@ -210,7 +203,14 @@ def run_supera(out_file='larcv.root',
   
     driver = get_flow2supera(config_key)
 
-    reader = flow2supera.reader.InputReader(driver.parser_run_config(), in_file,config_key)
+    reader = flow2supera.reader.InputReader(driver.parser_run_config(), config_key)
+
+    if num_events is None:
+        reader.ReadFile(in_file)
+        num_events = len(reader)
+    else:
+        entries_to_read = int(num_events) + int(num_skip)
+        reader.ReadFile(in_file, entries_to_read)
 
     id_vv = ROOT.std.vector("std::vector<unsigned long>")()
     value_vv = ROOT.std.vector("std::vector<float>")()
@@ -223,10 +223,11 @@ def run_supera(out_file='larcv.root',
 
     print("[run_supera] startup {:.3e} seconds".format(time.time() - start_time))
 
-    LOG_KEYS  = ['event_id','time_read','time_convert','time_generate', 'time_store', 'time_event']
-    LOG_KEYS += ['raw_image_sum','raw_image_npx','raw_packet_sum','raw_packet_num',
-    'in_cluster_sum','in_unass_sum','out_image_sum','out_image_num',
-    'out_cluster_sum','out_unass_sum']
+    LOG_KEYS  = ['event_id','time_read','time_convert','time_generate', 'time_store', 'time_event', 'time_log']
+    LOG_KEYS += ['raw_edeps_sum','raw_edeps_num','raw_voxel_sum','raw_voxel_num',
+    'in_edeps_sum','in_edeps_num','in_edeps_unass_sum','in_edeps_unass_num','in_voxel_unass_sum','in_voxel_unass_num',
+    'out_voxel_tensor_sum','out_voxel_tensor_num','out_voxel_cluster_sum','out_voxel_cluster_num',
+    'out_voxel_unass_sum','out_voxel_unass_num']
 
     logger = dict()
     if save_log:
@@ -252,35 +253,41 @@ def run_supera(out_file='larcv.root',
         #reader.EventDump(input_data)
         time_read = time.time() - t0
         print("[run_supera] reading input   {:.3e} seconds".format(time_read))
+        if save_log: logger['time_read'].append(time_read)
 
         t1 = time.time()
         EventInput = driver.ReadEvent(input_data)
         time_convert = time.time() - t1
         print("[run_supera] data conversion {:.3e} seconds".format(time_convert))
-      
+        if save_log: logger['time_convert'].append(time_convert)
+
+
         t2 = time.time()
         driver.GenerateImageMeta(EventInput)
-
-        # Perform an integrity check
-        if save_log:
-            log_supera_integrity_check(EventInput, driver, logger, verbose=False)
             
         meta   = larcv_meta(driver.Meta())
         tensor_hits = writer.get_data("sparse3d", "hits")
         
         if not reader._is_sim:
+
+            time_generate = time.time() - t2
+            if save_log: logger['time_generate'].append(time_generate)
+
+            t3 = time.time()
             driver.Meta().edep2voxelset(EventInput.unassociated_edeps).fill_std_vectors(id_v, value_v)
-            larcv.as_event_sparse3d(tensor_hits, meta, id_v, value_v)
-      
+            larcv.as_event_sparse3d(tensor_hits, meta, id_v, value_v)          
+
         if reader._is_sim:            
             if input_data.trajectories is None:
                 print(f'[run_supera] WARNING skipping this entry {entry} as it appears to be "empty" (no truth association found, non-unique event id, etc.)')
                 continue
+
             driver.Meta().edep2voxelset(driver._edeps_all).fill_std_vectors(id_v, value_v)
             larcv.as_event_sparse3d(tensor_hits, meta, id_v, value_v)
             driver.GenerateLabel(EventInput) 
             time_generate = time.time() - t2
             print("[run_supera] label creation  {:.3e} seconds".format(time_generate))
+            if save_log: logger['time_generate'].append(time_generate)
 
             # Start data store process
             t3 = time.time()
@@ -322,28 +329,39 @@ def run_supera(out_file='larcv.root',
                     continue
                 larn = larcv_neutrino(ixn)
                 interaction.append(larn)
-            
-            time_store = time.time() - t3
-            print("[run_supera] storing output  {:.3e} seconds".format(time_store))
 
         #propagating trigger info
         trigger = writer.get_data("trigger", "base")
         trigger.id(int(input_data.event_id))  # fixme: this will need to be different for real data?
         trigger.time_s(int(input_data.t0))
-        trigger.time_ns(int(1e9 * (input_data.t0 - trigger.time_s())))   
+        trigger.time_ns(int(1e9 * (input_data.t0 - trigger.time_s())))
 
         # TODO fill the run ID 
         writer.set_id(0, 0, int(input_data.event_id))
+        if save_log: logger['event_id'].append(input_data.event_id)
         writer.save_entry()
+
+        time_store = time.time() - t3
+        print("[run_supera] storing output  {:.3e} seconds".format(time_store))
+        if save_log: logger['time_store'].append(time_store)
+
+        # Perform an integrity check
+        if save_log:
+            t4 = time.time()
+            log_supera_integrity_check(EventInput, driver, logger, verbose=False)
+            time_log = time.time() - t4
+            print("[run_supera] logging/check   {:.3e} seconds".format(time_log))
+            if save_log: logger['time_log'].append(time_log)
 
         time_event = time.time() - t0
         print("[run_supera] driver total    {:.3e} seconds".format(time_event))
+        if save_log: logger['time_event'].append(time_event)
 
     writer.finalize()
 
     
     if save_log:
-        np.savez('log_flow2supera.npz',**logger)
+        np.savez(save_log+'.npz',**logger)
 
     end_time = time.time()
     
