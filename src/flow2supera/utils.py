@@ -377,7 +377,7 @@ def run_supera(out_file='larcv.root',
     end_time = time.time()
     
     print("\n----- [run_suera] finished -----\n")
-    print("[run_supera] Total processing time in s: ", end_time-start_time)
+    print("[run_supera] Total processing time in s: ", end_time-start_time,'\n')
 
 
 

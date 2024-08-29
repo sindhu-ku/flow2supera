@@ -1,28 +1,38 @@
 # ===============
-# 2x2.yaml
+# 2x2_mpvmpr.yaml
 # ===============
 
 SuperaDriver:
     LogLevel: WARNING
-    AssertInOutVoxelCount: False
+    AssertInOutVoxelCount: True
 
 Flow2Supera:
     PropertyConfig:
-        ParserConfigKeyword: '2x2'
-        SimConfigKeyword:    '2x2'
+        ParserConfigKeyword: 'ndlar'
+        SimConfigKeyword:    'ndlar'
         TileLayout: ''
         DetectorProperties: ''
-
-    DataType: ['data', '']
+    #
+    # flow2supera.Driver configuration
+    #
+    AssChargeLimit: 0.09
+    AssFractionLimit: 0.1
+    ElectronEnergyThreshold: 0
+    DataType: ['sim', 'neutrino']
+    ClusterSizeLimit: 5
+    DBSCANDist: 0.882366 # 1.99 * 0.4434
+    DBSCANNjobs: 1 # -1 = all cores, but 1 may be faster
+    DBSCANParticleCluster: True
+    DBSCANUnassociatedEDeps: True
 
 BBoxAlgorithm: BBoxInteraction
 BBoxConfig:
     LogLevel:   WARNING
     Seed:       -1
 
-    BBoxSize:   [141.888,127.6992,141.888]
-    BBoxTop:    [70.944,63.8496,70.944]
-    BBoxBottom: [-70.944,-63.8496,-70.944]
+    BBoxSize:   [ 720.0, 350.0, 570.0]
+    BBoxTop:    [ 360.0, 100.0, 950.0]
+    BBoxBottom: [-360.0,-250.0, 380.0]
     VoxelSize:  [0.4434,0.4434,0.4434]
 
 LabelAlgorithm: LArTPCMLReco3D
